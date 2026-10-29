@@ -66,4 +66,4 @@ The ROM's digital switch handlers E3CB..E50E cycle field masks in R44..R46. The 
 
 The v0.8 CI workflow `.github/workflows/opera-v08-preview.yml` compiles host tests for all 95 conversions and attempts to build `obervave.fwsc` for FM1. The artifact name explicitly contains `PREVIEW-NOT-VALIDATED`. Firmware should be tested with a recovery path and backed-up user patches before flashing.
 
-Sources: [Original SIEL 1983 schematics](https://www.polynominal.com/siel-dk600/assets/files/Siel%20DK-600%20Schematic%20.pdf); [Tauntek DK600 MIDI CC list (user supplied DK600ccmap.pdf)](../data/siel_factory_packed.hex); [original DK600 review](https://www.muzines.co.uk/articles/siel-dk600/8028).
+Sources: [Original SIEL 1983 schematics](https://www.polynominal.com/siel-dk600/assets/files/Siel%20DK-600%20Schematic%20.pdf); Tauntek DK600 MIDI CC list (user-supplied `DK600ccmap.pdf`, not redistributed); [original DK600 review](https://www.muzines.co.uk/articles/siel-dk600/8028).
