@@ -4,7 +4,10 @@ on:
     paths:
       - 'data/siel_factory_packed.hex'
       - 'firmware/src/siel_factory_bank.h'
+      - 'firmware/src/siel_factory_layout.h'
+      - 'tests/test_siel_layout.c'
       - 'tools/verify_siel_factory.py'
+      - 'tools/verify_dk600_layout.py'
       - '.github/workflows/siel-factory-data.yml'
   workflow_dispatch:
 jobs:
@@ -17,3 +20,7 @@ jobs:
           python-version: '3.x'
       - name: Verify original bank and generated C bytes
         run: python3 tools/verify_siel_factory.py
+      - name: Compile and exercise ROM-derived storage layout for all 95 programs
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O2 tests/test_siel_layout.c -o /tmp/test_siel_layout
+          /tmp/test_siel_layout
