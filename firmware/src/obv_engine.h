@@ -20,6 +20,7 @@ typedef struct { uint32_t stage; int32_t level; } env_t;   /* level Q24 */
 
 typedef struct {
     osc_t o1, o2;
+    osc_t x1_l, x1_r, x2_l, x2_r;   /* Opera X: detuned side oscillators, dormant for classic waves */
     uint32_t noise;
     env_t fe, ae;
     svf_state_t f1, f2;
@@ -147,6 +148,9 @@ static void voice_start(voice_t *v, uint32_t part, uint32_t note, uint32_t vel, 
     v->ae.stage = E_ATT;
     v->lfo_blk = 0;
     v->lfo_fade = pv[P_LFO_DELAY] ? 0 : 32767;
+    /* Phase-offset side voices form a wide sound as soon as the note starts. */
+    opera_x_init_aux(&v->x1_l, &v->x1_r, v->o1.ph);
+    opera_x_init_aux(&v->x2_l, &v->x2_r, v->o2.ph);
     voice_pan(v, pan);
 }
 
@@ -706,6 +710,13 @@ static void voice_render(voice_t *v, int32_t *out)
     const part_t *g = &pt[v->part];
     int32_t l1 = g->lvl1, l2 = g->lvl2, ln = g->lvln, drv = g->drive_q12, morph_q = g->morph_q;
     uint32_t ft = g->ftype, xq = g->xmod_q, sy = g->sync_on, ww1 = g->w1, ww2 = g->w2;
+    uint32_t inc1_l = inc1, inc1_r = inc1, inc2_l = inc2, inc2_r = inc2;
+    /* Detune rates are derived once per control block, not per sample.
+     * Oscillator PW doubles as wide-wave detune; no extra patch bytes. */
+    if (ww1 == W_SUPERSAW || ww1 == W_SUPERPULSE)
+        opera_x_detuned_incs(inc1, g->p->v[P_O1_PW], &inc1_l, &inc1_r);
+    if (ww2 == W_SUPERSAW || ww2 == W_SUPERPULSE)
+        opera_x_detuned_incs(inc2, g->p->v[P_O2_PW], &inc2_l, &inc2_r);
     int32_t hw1 = (ww1 & OSC_SAW ? -65536 : 0) + (ww1 & OSC_PLS ? -65536 : 0);
     int32_t hw2 = (ww2 & OSC_SAW ? -65536 : 0) + (ww2 & OSC_PLS ? -65536 : 0);
     for (i = 0; i < CTL; i++) {
@@ -717,10 +728,16 @@ static void voice_render(voice_t *v, int32_t *out)
             ie = m < (int32_t)(inc1 >> 4) ? inc1 >> 4 : (uint32_t)m;
             d1 = ie >> 15;
         }
-        s1 = osc_step(&v->o1, ie, d1, pw1, ww1, hw1, -1);
+        s1 = ww1 <= W_BOTH
+            ? osc_step(&v->o1, ie, d1, pw1, ww1, hw1, -1)
+            : opera_x_osc_sample(&v->o1, &v->x1_l, &v->x1_r,
+                                 ie, inc1_l, inc1_r, pw1, ww1, -1);
         if (sy && v->o1.ph < ie && d1)
             rt = (int32_t)(v->o1.ph / d1);
-        s2 = osc_step(&v->o2, inc2, d2, pw2, ww2, hw2, rt);
+        s2 = ww2 <= W_BOTH
+            ? osc_step(&v->o2, inc2, d2, pw2, ww2, hw2, rt)
+            : opera_x_osc_sample(&v->o2, &v->x2_l, &v->x2_r,
+                                 inc2, inc2_l, inc2_r, pw2, ww2, rt);
         o2n = v->o2.prev;
         mix = s1 * l1 + s2 * l2;
         if (ln) mix += ((int32_t)(xorshift(&v->noise) >> 16) - 32768) * ln;
