@@ -39,13 +39,21 @@ static void siel_factory_to_patch(patch_t *p, uint8_t program) {
     p->v[P_NOISE] = siel_midi8(siel_factory_analog(program, 5u)); /* C6: noise */
     p->v[P_O2_PW] = siel_midi8(siel_factory_analog(program, 6u)); /* C7: PWM B */
     p->v[P_CUTOFF] = siel_midi8(siel_factory_analog(program, 14u)); /* C15 */
-    /* Preview-only correction: FM1's digital LP24 response is not the SIEL
-     * analog SSM filter response. Very low converted cutoffs muted numerous
-     * musical patches, so use a conservative audible minimum. Never alter
-     * the original SIEL data or hardware calibration programs 90..94. */
-    if (program < 90u && p->v[P_CUTOFF] < 28u)
-        p->v[P_CUTOFF] = 28u;
     p->v[P_RESO] = siel_midi8(siel_factory_analog(program, 15u));   /* C16 */
+    /* Musical factory-preview translation, NOT a circuit-accurate mapping.
+     * The original 0..127 control law makes the FM1 cascaded digital LP24
+     * almost inaudible at low cutoff and extreme resonance. Remap all 90
+     * musical programs using continuous, monotonic curves: preserve relative
+     * cutoff and resonance differences instead of patch-number exceptions.
+     * C15/C16 of the five calibration programs remain unmodified. */
+    if (program < 90u) {
+        int32_t cut = 38 + (int32_t)p->v[P_CUTOFF] * 75 / 127;
+        int32_t res = (int32_t)p->v[P_RESO] * 78 / 127;
+        int32_t floor = 43 + res / 4;
+        if (cut < floor) cut = floor;
+        p->v[P_CUTOFF] = (uint8_t)cut;
+        p->v[P_RESO] = (uint8_t)res;
+    }
     p->v[P_FA] = p->v[P_AA] = siel_midi8(siel_factory_analog(program, 9u));  /* C10 */
     p->v[P_FD] = p->v[P_AD] = siel_midi8(siel_factory_analog(program, 10u)); /* C11 */
     p->v[P_FS] = p->v[P_AS] = siel_midi8(siel_factory_analog(program, 11u)); /* C12 */
@@ -104,27 +112,6 @@ static void siel_factory_to_patch(patch_t *p, uint8_t program) {
     p->v[P_VINTAGE] = 0u;
     p->v[P_SPREAD] = 0u;
     p->v[P_DRIVE] = 0u;
-    /* Diagnostic rescue for the THIRD displayed factory slot, SIEL 02.
-     * Reported inaudible in the emulator. The approximate conversion puts
-     * a resonant 24dB low-pass on a quiet setting (cutoff 32, resonance 106).
-     * Hold the same source waveforms and envelopes, but open the filter
-     * and reduce resonance enough to test whether the filter causes silence.
-     * NOT an authentic SIEL calibration; original 20 bytes are unchanged. */
-    if (program == 2u) {
-        p->v[P_CUTOFF] = 76u;
-        p->v[P_RESO] = 35u;
-        p->v[P_FENV_AMT] = 64u;
-    }
-    /* Diagnostic for ninth displayed factory preset (original program 08):
-     * raw cutoff 42 / resonance 124 plus near-zero amplitude sustain.
-     * Test the suspected closed, highly resonant LP24 response separately
-     * without modifying its oscillators or original envelope data.
-     * Preview-only, NOT a verified Opera 6 factory adjustment. */
-    if (program == 8u) {
-        p->v[P_CUTOFF] = 76u;
-        p->v[P_RESO] = 35u;
-        p->v[P_FENV_AMT] = 64u;
-    }
     p->v[P_CHO_MIX] = 0u;
     p->v[P_DLY_MIX] = 0u;
     p->v[P_REV_MIX] = 0u;
