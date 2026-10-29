@@ -1,0 +1,19 @@
+name: Verify original SIEL factory bank
+on:
+  push:
+    paths:
+      - 'data/siel_factory_packed.hex'
+      - 'firmware/src/siel_factory_bank.h'
+      - 'tools/verify_siel_factory.py'
+      - '.github/workflows/siel-factory-data.yml'
+  workflow_dispatch:
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Verify original bank and generated C bytes
+        run: python3 tools/verify_siel_factory.py
