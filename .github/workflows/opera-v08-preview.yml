@@ -6,6 +6,7 @@ on:
       - 'firmware/src/siel_factory_*.h'
       - 'firmware/src/obervave.c'
       - 'firmware/src/obv_ui.h'
+      - 'firmware/src/obv_engine.h'
       - 'data/siel_factory_packed.hex'
       - 'tests/test_siel_preview.c'
       - '.github/workflows/opera-v08-preview.yml'
@@ -58,6 +59,6 @@ jobs:
         run: test -s build/obervave.fwsc
       - uses: actions/upload-artifact@v4
         with:
-          name: OPERA-FM1-v0.8.6-UI-PREVIEW
+          name: OPERA-FM1-v0.8.7-OSCILLATOR-FOOTAGE-PREVIEW
           path: build/obervave.fwsc
           if-no-files-found: error
