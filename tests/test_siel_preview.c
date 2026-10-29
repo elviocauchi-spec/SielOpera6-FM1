@@ -12,9 +12,22 @@ int main(void) {
         siel_factory_to_patch(&p, (uint8_t)i);
         for (j = 0; j < NPARAM; ++j)
             assert(p.v[j] <= PDEF[j].max);
-        assert(p.v[NPARAM] == 'S');
-        assert(p.v[NPARAM + 5u] == (uint8_t)('0' + i / 10u));
-        assert(p.v[NPARAM + 6u] == (uint8_t)('0' + i % 10u));
+        /* Verify the exact name selected for each original program,
+         * and retain service IDs for 90..94. */
+        if (i < 90u) {
+            unsigned k;
+            const char *expected = siel_factory_display_names[i];
+            for (k = 0u; k < PATCH_NAME && expected[k]; ++k)
+                assert(p.v[NPARAM + k] == (uint8_t)expected[k]);
+            for (; k < PATCH_NAME; ++k)
+                assert(p.v[NPARAM + k] == (uint8_t)' ');
+        } else {
+            assert(p.v[NPARAM] == 'S');
+            assert(p.v[NPARAM + 1u] == 'V');
+            assert(p.v[NPARAM + 2u] == 'C');
+            assert(p.v[NPARAM + 5u] == (uint8_t)('0' + i / 10u));
+            assert(p.v[NPARAM + 6u] == (uint8_t)('0' + i % 10u));
+        }
         assert(p.v[P_FTYPE] == F_LP24);
         assert(p.v[P_CHO_MIX] == 0u && p.v[P_DLY_MIX] == 0u && p.v[P_REV_MIX] == 0u);
         /* v0.8.4 continuous filter curves apply only to musical patches. */
