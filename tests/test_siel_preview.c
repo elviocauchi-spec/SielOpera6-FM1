@@ -21,6 +21,11 @@ int main(void) {
         if (i < 90u) {
             assert(p.v[P_CUTOFF] >= 43u && p.v[P_CUTOFF] <= 113u);
             assert(p.v[P_RESO] <= 78u);
+            assert(p.v[P_VOLUME] >= 88u && p.v[P_VOLUME] <= 119u);
+            if (p.v[P_O1_WAVE] == W_PLS || p.v[P_O1_WAVE] == W_BOTH)
+                assert(p.v[P_O1_PW] >= 17u && p.v[P_O1_PW] <= 110u);
+            if (p.v[P_O2_WAVE] == W_PLS || p.v[P_O2_WAVE] == W_BOTH)
+                assert(p.v[P_O2_PW] >= 17u && p.v[P_O2_PW] <= 110u);
             assert(p.v[P_CUTOFF] >= 43u + p.v[P_RESO] / 4u);
             if (p.v[P_O2_LVL])
                 assert(p.v[P_O2_SEMI] >= 12u && p.v[P_O2_SEMI] <= 36u);
@@ -55,6 +60,10 @@ int main(void) {
     assert(p.v[P_O1_WAVE] == W_SAW);
     assert(p.v[P_O2_WAVE] == W_OFF);
     assert(p.v[P_O1_LVL] == 127u && p.v[P_O2_LVL] == 0u);
+    /* Service presets retain their raw conversion, including pulse width
+     * and default volume, rather than the musical-preview compensation. */
+    siel_factory_to_patch(&p, 93u);
+    assert(p.v[P_VOLUME] == PDEF[P_VOLUME].def);
     siel_factory_to_patch(&p, 91u); /* service: resonant VCF calibration */
     assert(p.v[P_CUTOFF] == 72u);
     assert(p.v[P_RESO] == 126u);
