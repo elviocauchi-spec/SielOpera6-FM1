@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* OPERA-FM1 v0.8.6 UI preview: vintage SIEL-inspired colors and compact
+/* OPERA X v0.9 sound-lab UI: keep the proven screen renderer and compact
  * panel identity, while keeping the existing 240x240 FM1 page and control
  * structure. No changes to synthesis, factory bytes, or MIDI handling.
  * A red LED program number, four anti-aliased knobs, scope and voice LEDs. 240 x 240:
@@ -150,7 +150,7 @@ static void cv_stripes(int32_t y0, int32_t band, int32_t gap, int32_t x_to, int3
 
 static void draw_logo_small(int32_t x, int32_t y)   /* Compact UI identity (the full startup image is still being redesigned). */
 {
-    cv_text(x, y, &FONT_S, "OPERA 6", C_CREAM);
+    cv_text(x, y, &FONT_S, "OPERA X", C_CREAM);
     cv_stripes(y + 10, 2, 0, x, 1);
 }
 
@@ -174,7 +174,7 @@ static void ui_header(uint32_t prog, const uint8_t *name, uint32_t edited, const
     cv_text(54, 4, &FONT_S, tl, c);
     cv_text(66, 4, &FONT_S, n, trk ? c : C_CREAM);
     cv_text(54, 22, &FONT_S, tags, C_DIMT);
-    draw_logo_small(240 - 4 - text_w(&FONT_S, "OPERA 6"), 4);
+    draw_logo_small(240 - 4 - text_w(&FONT_S, "OPERA X"), 4);
     cv_rect(0, 42, 240, 1, C_RULE);
     cv_blit(0, 0);
 }
@@ -549,7 +549,7 @@ static void splash_frame(uint32_t fade, int32_t x_to, uint32_t sub)
         if (++x == SPLASH_W) { x = 0; y++; }
     }
     if (sub) {                                      /* the line under the logo, as in assets/logo.png, in two rows */
-        const char *t1 = "SIEL OPERA 6 / FM1", *t2 = "UI PREVIEW 0.8.6";
+        const char *t1 = "OPERA X / FM1", *t2 = "SOUND LAB v0.9";
         uint16_t c = sub >= 256u ? C_AMBER : blend565(C_PANEL, C_AMBER, sub);
         cv_text((240 - text_w(&FONT_S, t1)) / 2, SPLASH_H + 14, &FONT_S, t1, c);
         cv_text((240 - text_w(&FONT_S, t2)) / 2, SPLASH_H + 28, &FONT_S, t2, c);
