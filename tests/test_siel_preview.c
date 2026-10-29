@@ -17,6 +17,13 @@ int main(void) {
         assert(p.v[NPARAM + 6u] == (uint8_t)('0' + i % 10u));
         assert(p.v[P_FTYPE] == F_LP24);
         assert(p.v[P_CHO_MIX] == 0u && p.v[P_DLY_MIX] == 0u && p.v[P_REV_MIX] == 0u);
+        /* v0.8.1 preview-only musical-patch safeguards.
+         * Calibration programs 90..94 remain unchanged. */
+        if (i < 90u) {
+            assert(p.v[P_CUTOFF] >= 28u);
+            if (p.v[P_O2_LVL])
+                assert(p.v[P_O2_SEMI] >= 12u && p.v[P_O2_SEMI] <= 36u);
+        }
         /* Original factory programs 00..89 must have an audible source. */
         if (i < 90u)
             assert(p.v[P_O1_LVL] || p.v[P_O2_LVL] || p.v[P_NOISE]);
