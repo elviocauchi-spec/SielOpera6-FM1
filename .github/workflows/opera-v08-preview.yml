@@ -21,6 +21,8 @@ jobs:
           python-version: '3.x'
       - name: Check original 95-program bank
         run: python3 tools/verify_siel_factory.py
+      - name: Verify all 90 Opera 6 program names and numbers
+        run: python3 tests/test_siel_names.py
       - name: Compile and test ROM storage layout
         run: |
           cc -std=c11 -Wall -Wextra -Werror tests/test_siel_layout.c -o /tmp/siel_layout
