@@ -28,6 +28,11 @@ int main(void) {
         if (i < 90u)
             assert(p.v[P_O1_LVL] || p.v[P_O2_LVL] || p.v[P_NOISE]);
     }
+    siel_factory_to_patch(&p, 2u);
+    assert(p.v[P_CUTOFF] == 76u);
+    assert(p.v[P_RESO] == 35u);
+    assert(p.v[P_FENV_AMT] == 64u);
+    assert(p.v[P_O1_LVL] && p.v[P_O2_LVL]);
     siel_factory_to_patch(&p, 0u);
     assert(p.v[P_O1_WAVE] == W_SAW);
     assert(p.v[P_O2_WAVE] == W_OFF);
