@@ -39,6 +39,12 @@ static void siel_factory_to_patch(patch_t *p, uint8_t program) {
     p->v[P_NOISE] = siel_midi8(siel_factory_analog(program, 5u)); /* C6: noise */
     p->v[P_O2_PW] = siel_midi8(siel_factory_analog(program, 6u)); /* C7: PWM B */
     p->v[P_CUTOFF] = siel_midi8(siel_factory_analog(program, 14u)); /* C15 */
+    /* Preview-only correction: FM1's digital LP24 response is not the SIEL
+     * analog SSM filter response. Very low converted cutoffs muted numerous
+     * musical patches, so use a conservative audible minimum. Never alter
+     * the original SIEL data or hardware calibration programs 90..94. */
+    if (program < 90u && p->v[P_CUTOFF] < 28u)
+        p->v[P_CUTOFF] = 28u;
     p->v[P_RESO] = siel_midi8(siel_factory_analog(program, 15u));   /* C16 */
     p->v[P_FA] = p->v[P_AA] = siel_midi8(siel_factory_analog(program, 9u));  /* C10 */
     p->v[P_FD] = p->v[P_AD] = siel_midi8(siel_factory_analog(program, 10u)); /* C11 */
@@ -59,6 +65,13 @@ static void siel_factory_to_patch(patch_t *p, uint8_t program) {
     if (!bfoot) bfoot = 2u;
     coarse = ((int32_t)255 - siel_factory_analog(program, 8u) + 18) / 36;
     semis = 24 + 12 * ((int32_t)bfoot - afoot) - coarse;
+    /* Preview-only guard against extreme octave intervals. A zero or
+     * four-octave separation made some programs seem sub-bass or unrelated
+     * to their source. Final tuning requires an accurate Opera 6 mapping. */
+    if (program < 90u && p->v[P_O2_LVL]) {
+        if (semis < 12) semis = 12;
+        if (semis > 36) semis = 36;
+    }
     p->v[P_O2_SEMI] = (uint8_t)(semis < 0 ? 0 : semis > 48 ? 48 : semis);
     fine = 64 + ((int32_t)siel_factory_analog(program, 7u) - 121) / 2;
     p->v[P_O2_FINE] = siel_clamp127(fine);
