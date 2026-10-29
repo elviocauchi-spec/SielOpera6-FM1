@@ -1,0 +1,62 @@
+name: Build SIEL Opera 6 v0.8 factory-preview firmware
+on:
+  push:
+    branches: [v08-factory-development]
+    paths:
+      - 'firmware/src/siel_factory_*.h'
+      - 'firmware/src/obervave.c'
+      - 'data/siel_factory_packed.hex'
+      - 'tests/test_siel_preview.c'
+      - '.github/workflows/opera-v08-preview.yml'
+  workflow_dispatch:
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Check original 95-program bank
+        run: python3 tools/verify_siel_factory.py
+      - name: Compile and test ROM storage layout
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror tests/test_siel_layout.c -o /tmp/siel_layout
+          /tmp/siel_layout
+      - name: Compile and test 95 playable preview conversions
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-const-variable -I firmware/src tests/test_siel_preview.c -o /tmp/siel_preview
+          /tmp/siel_preview
+  firmware:
+    needs: host-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: python3 -m pip install Pillow
+      - name: Install JieLi compiler
+        run: sh tools/get_toolchain.sh
+      - name: Download AC79 SDK
+        shell: bash
+        run: |
+          set -e
+          for i in 1 2 3; do
+            echo "SDK attempt $i/3"
+            rm -rf "$HOME/fw-AC79_AIoT_SDK"
+            if timeout 180s git clone --progress --depth 1 --single-branch --branch AC79NN_SDK_V1.2.1_2023-12-13 https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git "$HOME/fw-AC79_AIoT_SDK"; then
+              break
+            fi
+          done
+          test -f "$HOME/fw-AC79_AIoT_SDK/cpu/wl82/tools/uboot.boot"
+      - name: Build v0.8 factory-preview FM1
+        run: BOARD=fm1 sh build.sh
+      - name: Verify firmware
+        run: test -s build/obervave.fwsc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OPERA-FM1-v0.8-SIEL-95-PREVIEW-NOT-VALIDATED
+          path: build/obervave.fwsc
+          if-no-files-found: error
