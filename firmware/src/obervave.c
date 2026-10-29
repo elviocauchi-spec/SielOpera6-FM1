@@ -626,8 +626,8 @@ static void randomize(void)
     uint32_t i, r;
     patch_t *d = &live_p[seq_trk % NTRK];
     for (i = 0; i < NPARAM; i++) d->v[i] = PDEF[i].def;
-    d->v[P_O1_WAVE] = (uint8_t)rn(1, 3);
-    d->v[P_O2_WAVE] = (uint8_t)rn(0, 3);
+    d->v[P_O1_WAVE] = (uint8_t)rn(1, 7);
+    d->v[P_O2_WAVE] = (uint8_t)rn(0, 7);
     d->v[P_O1_PW] = (uint8_t)rn(10, 110);
     d->v[P_O2_PW] = (uint8_t)rn(10, 110);
     d->v[P_O2_LVL] = (uint8_t)rn(60, 127);
@@ -879,6 +879,13 @@ static void draw_page(void)
             seq_knob(&k[i], i);
         } else if (p >= 0) {
             k[i].label = PDEF[p].name;
+            /* Opera X wide oscillators use PW as detune width (and pulse
+             * shape on SUP PLS): give the knob a meaningful label. */
+            if (p == P_O1_PW || p == P_O2_PW) {
+                uint32_t wave = ed_patch((uint32_t)p)->v[p == P_O1_PW ? P_O1_WAVE : P_O2_WAVE];
+                if (wave == W_SUPERSAW) k[i].label = "DETUNE";
+                else if (wave == W_SUPERPULSE) k[i].label = "WIDTH";
+            }
             k[i].v = ed_patch((uint32_t)p)->v[p];
             k[i].max = PDEF[p].max;
             k[i].bip = PDEF[p].kind == K_BIP || PDEF[p].kind == K_SEMI || PDEF[p].kind == K_MORPH;
