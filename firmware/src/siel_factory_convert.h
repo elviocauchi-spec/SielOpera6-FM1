@@ -94,10 +94,10 @@ static void siel_factory_to_patch(patch_t *p, uint8_t program) {
     p->v[P_CHO_MIX] = 0u;
     p->v[P_DLY_MIX] = 0u;
     p->v[P_REV_MIX] = 0u;
-    p->v[NPARAM + 0u] = program >= 90u ? 'S' : 'S';
+    p->v[NPARAM + 0u] = 'S';
     p->v[NPARAM + 1u] = program >= 90u ? 'V' : 'I';
     p->v[NPARAM + 2u] = program >= 90u ? 'C' : 'E';
-    p->v[NPARAM + 3u] = 'L';
+    p->v[NPARAM + 3u] = program >= 90u ? ' ' : 'L';
     p->v[NPARAM + 4u] = ' ';
     p->v[NPARAM + 5u] = (uint8_t)('0' + program / 10u);
     p->v[NPARAM + 6u] = (uint8_t)('0' + program % 10u);
