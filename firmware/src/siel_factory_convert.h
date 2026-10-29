@@ -107,6 +107,43 @@ static void siel_factory_to_patch(patch_t *p, uint8_t program) {
         pitch_route ? 1u : ((pwm_route || (r45 & 0x80u)) ? 3u : 1u)));
     p->v[P_LFO_SHAPE] = (((r44 >> 4) & 3u) == 2u) ? L_SQR : L_TRI;
 
+    /* v0.8.5: musical-preview translation across the whole factory bank.
+     * The SIEL's analog pulse-width response differs from FM1's PWM engine:
+     * extreme widths can effectively cancel a pulse oscillator. Only bound
+     * the widths of enabled pulse sources; preserve their per-program values.
+     * These bounds do NOT apply to the original calibration slots 90..94. */
+    if (program < 90u) {
+        int32_t volume, sources, cutoff, sustain;
+        if (p->v[P_O1_WAVE] == W_PLS || p->v[P_O1_WAVE] == W_BOTH) {
+            if (p->v[P_O1_PW] < 17u) p->v[P_O1_PW] = 17u;
+            if (p->v[P_O1_PW] > 110u) p->v[P_O1_PW] = 110u;
+        }
+        if (p->v[P_O2_WAVE] == W_PLS || p->v[P_O2_WAVE] == W_BOTH) {
+            if (p->v[P_O2_PW] < 17u) p->v[P_O2_PW] = 17u;
+            if (p->v[P_O2_PW] > 110u) p->v[P_O2_PW] = 110u;
+        }
+        /* Moderate level compensation for oscillator count, filter darkness
+         * and sustained envelope level. It deliberately cannot force a
+         * percussive/no-sustain program to sustain or make all sounds equal.
+         * FM1 patch VOLUME is squared by its audio engine. */
+        sources = (p->v[P_O1_LVL] ? 1 : 0) +
+                  (p->v[P_O2_LVL] ? 1 : 0) +
+                  (p->v[P_NOISE] > 24u ? 1 : 0);
+        cutoff = p->v[P_CUTOFF];
+        sustain = p->v[P_AS];
+        volume = 101 + (sources == 1 ? 8 : sources >= 3 ? -7 : 0);
+        if (cutoff < 65) volume += (65 - cutoff) / 4;
+        if (sustain > 0 && sustain < 45)
+            volume += (45 - sustain) / 8;
+        if (volume < 88) volume = 88;
+        if (volume > 119) volume = 119;
+        p->v[P_VOLUME] = (uint8_t)volume;
+        /* The original modulation depth is a control voltage; raw /2
+         * scales can make FM1 pitch modulation overpower the oscillator
+         * timbre. Retain differences with a bounded preview scale. */
+        p->v[P_LFO_PITCH] = (uint8_t)(p->v[P_LFO_PITCH] * 3u / 5u);
+    }
+
     p->v[P_MODE] = M_POLY;
     p->v[P_FTYPE] = F_LP24;
     p->v[P_VINTAGE] = 0u;
