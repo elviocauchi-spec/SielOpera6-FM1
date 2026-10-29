@@ -57,6 +57,6 @@ jobs:
         run: test -s build/obervave.fwsc
       - uses: actions/upload-artifact@v4
         with:
-          name: OPERA-FM1-v0.8.4-BANK-WIDE-PREVIEW
+          name: OPERA-FM1-v0.8.5-VOLUME-AND-VARIETY-PREVIEW
           path: build/obervave.fwsc
           if-no-files-found: error
