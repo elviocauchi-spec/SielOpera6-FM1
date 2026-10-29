@@ -128,7 +128,9 @@ static void cv_seg7(int32_t x, int32_t y, uint32_t digit, uint16_t on, uint16_t 
     cv_rect(x, y + h / 2 - 2, t, h / 2, m & 0x10u ? on : off);      /* e */
 }
 
-/* the stripes: three bands of `band` px from row y0. In the letters (text_only, the logo) the text takes the
+/* the stripes: three bands of `band` px from row y0. For text_only, x_to is the
+ * starting x of the logo: never recolor the LED digits or patch name to its left.
+ * In the letters (text_only, the logo) the text takes the
  * band's colour by its brightness; across the screen (the splash) the band runs up to x_to and the letters
  * stand in it as dark cut-outs */
 static void cv_stripes(int32_t y0, int32_t band, int32_t gap, int32_t x_to, int32_t text_only)
@@ -136,7 +138,7 @@ static void cv_stripes(int32_t y0, int32_t band, int32_t gap, int32_t x_to, int3
     int32_t b, y, x;
     for (b = 0; b < 3; b++)
         for (y = y0 + b * (band + gap); y < y0 + b * (band + gap) + band; y++)
-            for (x = 0; x < (int32_t)cv_w; x++) {
+            for (x = text_only ? x_to : 0; x < (int32_t)cv_w; x++) {
                 uint16_t c = cv_get(x, y);
                 uint32_t g = (c >> 5) & 63u, is_text = c != C_PANEL && c != C_BLACK && g > 14u;   /* brighter than the panel */
                 if (text_only) {
@@ -149,7 +151,7 @@ static void cv_stripes(int32_t y0, int32_t band, int32_t gap, int32_t x_to, int3
 static void draw_logo_small(int32_t x, int32_t y)   /* Compact UI identity (the full startup image is still being redesigned). */
 {
     cv_text(x, y, &FONT_S, "OPERA 6", C_CREAM);
-    cv_stripes(y + 10, 2, 0, 0, 1);
+    cv_stripes(y + 10, 2, 0, x, 1);
 }
 
 /* ---- the parts of the screen (the app decides when) */
