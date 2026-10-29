@@ -28,7 +28,7 @@ jobs:
         run: python3 tests/test_siel_names.py
       - name: Compile and test Opera X waveforms and musical presets
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-const-variable -I firmware/src tests/test_opera_x.c -o /tmp/opera_x_test
+          cc -std=c11 -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-const-variable -I firmware/src -I firmware/gen tests/test_opera_x.c -o /tmp/opera_x_test
           /tmp/opera_x_test
       - name: Compile and test ROM storage layout
         run: |
