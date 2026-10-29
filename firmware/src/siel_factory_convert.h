@@ -115,6 +115,16 @@ static void siel_factory_to_patch(patch_t *p, uint8_t program) {
         p->v[P_RESO] = 35u;
         p->v[P_FENV_AMT] = 64u;
     }
+    /* Diagnostic for ninth displayed factory preset (original program 08):
+     * raw cutoff 42 / resonance 124 plus near-zero amplitude sustain.
+     * Test the suspected closed, highly resonant LP24 response separately
+     * without modifying its oscillators or original envelope data.
+     * Preview-only, NOT a verified Opera 6 factory adjustment. */
+    if (program == 8u) {
+        p->v[P_CUTOFF] = 76u;
+        p->v[P_RESO] = 35u;
+        p->v[P_FENV_AMT] = 64u;
+    }
     p->v[P_CHO_MIX] = 0u;
     p->v[P_DLY_MIX] = 0u;
     p->v[P_REV_MIX] = 0u;
