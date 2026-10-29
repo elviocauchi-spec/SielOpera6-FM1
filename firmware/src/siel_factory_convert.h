@@ -104,6 +104,17 @@ static void siel_factory_to_patch(patch_t *p, uint8_t program) {
     p->v[P_VINTAGE] = 0u;
     p->v[P_SPREAD] = 0u;
     p->v[P_DRIVE] = 0u;
+    /* Diagnostic rescue for the THIRD displayed factory slot, SIEL 02.
+     * Reported inaudible in the emulator. The approximate conversion puts
+     * a resonant 24dB low-pass on a quiet setting (cutoff 32, resonance 106).
+     * Hold the same source waveforms and envelopes, but open the filter
+     * and reduce resonance enough to test whether the filter causes silence.
+     * NOT an authentic SIEL calibration; original 20 bytes are unchanged. */
+    if (program == 2u) {
+        p->v[P_CUTOFF] = 76u;
+        p->v[P_RESO] = 35u;
+        p->v[P_FENV_AMT] = 64u;
+    }
     p->v[P_CHO_MIX] = 0u;
     p->v[P_DLY_MIX] = 0u;
     p->v[P_REV_MIX] = 0u;
