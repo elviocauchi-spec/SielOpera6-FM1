@@ -9,7 +9,8 @@
  *   200..236 the voice LEDs */
 #define C_PANEL RGB(20, 20, 19)                 /* warm charcoal: vintage instrument panel */
 #define C_CREAM RGB(244, 234, 213)              /* ivory instrument legends */
-#define C_AMBER RGB(241, 178, 71)               /* warm amber for active parameters */
+#define C_AMBER RGB(241, 178, 71)               /* warm amber for alerts and activity */
+#define C_TEAL RGB(71, 184, 173)                /* vintage Opera 6-inspired teal for synth controls */
 #define C_RED RGB(244, 64, 48)
 #define C_RED_DIM RGB(62, 18, 14)
 #define C_DIMT RGB(174, 159, 137)
@@ -18,7 +19,7 @@
 #define C_KNOB_HI RGB(123, 110, 91)
 #define C_SCOPE_BG RGB(13, 14, 13)
 #define C_SCOPE_MID RGB(73, 58, 43)
-static const uint16_t STRIPE[3] = {RGB(133, 45, 35), RGB(202, 101, 43), RGB(241, 178, 71)};
+static const uint16_t STRIPE[3] = {RGB(41, 102, 107), RGB(71, 184, 173), RGB(241, 178, 71)};
 
 /* a * (1 - t) + b * t for RGB565, t = 0..256 */
 static uint16_t blend565(uint16_t a, uint16_t b, uint32_t t)
@@ -94,10 +95,10 @@ static void cv_knob(int32_t cx, int32_t cy, const char *label, const char *value
     cv_text(cx - text_w(&FONT_S, label) / 2, cy - 44, &FONT_S, label, C_DIMT);
     cv_arc(cx, cy, r + 6, 225, -45, C_RULE);
     if (bip) {
-        if (ang < 90) cv_arc(cx, cy, r + 6, 90, ang, C_AMBER);
-        else cv_arc(cx, cy, r + 6, ang, 90, C_AMBER);
+        if (ang < 90) cv_arc(cx, cy, r + 6, 90, ang, C_TEAL);
+        else cv_arc(cx, cy, r + 6, ang, 90, C_TEAL);
     } else
-        cv_arc(cx, cy, r + 6, 225, ang, C_AMBER);
+        cv_arc(cx, cy, r + 6, 225, ang, C_TEAL);
     cv_disc(cx, cy, r, 0, C_KNOB);
     cv_disc(cx, cy, r, 2, C_KNOB_HI);
     knob_xy(cx, cy, 5, ang, &px, &py);
@@ -176,7 +177,7 @@ static void ui_page(const char *title, const knob_view_t *k, const char *note)
     int32_t tw = text_w(&FONT_S, title), i;
     cv_begin(240, 98, C_PANEL);
     cv_rect(6, 9, (240 - tw) / 2 - 14, 1, C_RULE);
-    cv_text((240 - tw) / 2, 1, &FONT_S, title, C_AMBER);
+    cv_text((240 - tw) / 2, 1, &FONT_S, title, C_TEAL);
     cv_rect((240 + tw) / 2 + 8, 9, (240 - tw) / 2 - 14, 1, C_RULE);
     for (i = 0; i < 4; i++)
         if (k[i].present) {
