@@ -14,6 +14,7 @@
 #ifndef SIEL_FACTORY_CONVERT_H
 #define SIEL_FACTORY_CONVERT_H
 #include "siel_factory_layout.h"
+#include "siel_factory_names.h"
 
 /* FM1 parameter definitions (obv_params.h) must be included before this file. */
 static uint8_t siel_clamp127(int32_t x) {
@@ -162,12 +163,22 @@ static void siel_factory_to_patch(patch_t *p, uint8_t program) {
     p->v[P_CHO_MIX] = 0u;
     p->v[P_DLY_MIX] = 0u;
     p->v[P_REV_MIX] = 0u;
-    p->v[NPARAM + 0u] = 'S';
-    p->v[NPARAM + 1u] = program >= 90u ? 'V' : 'I';
-    p->v[NPARAM + 2u] = program >= 90u ? 'C' : 'E';
-    p->v[NPARAM + 3u] = program >= 90u ? ' ' : 'L';
-    p->v[NPARAM + 4u] = ' ';
-    p->v[NPARAM + 5u] = (uint8_t)('0' + program / 10u);
-    p->v[NPARAM + 6u] = (uint8_t)('0' + program % 10u);
+    /* Names from the original Opera 6 factory label, matched to the
+     * existing SIEL program index. No factory audio parameter is changed. */
+    if (program < 90u) {
+        const char *name = siel_factory_display_names[program];
+        unsigned i;
+        for (i = 0u; i < PATCH_NAME; ++i)
+            p->v[NPARAM + i] = name[i] ? (uint8_t)name[i] : (uint8_t)' ';
+    } else {
+        /* Reserved service/calibration programs 90..94 retain their IDs. */
+        p->v[NPARAM + 0u] = 'S';
+        p->v[NPARAM + 1u] = 'V';
+        p->v[NPARAM + 2u] = 'C';
+        p->v[NPARAM + 3u] = ' ';
+        p->v[NPARAM + 4u] = ' ';
+        p->v[NPARAM + 5u] = (uint8_t)('0' + program / 10u);
+        p->v[NPARAM + 6u] = (uint8_t)('0' + program % 10u);
+    }
 }
 #endif /* SIEL_FACTORY_CONVERT_H */
