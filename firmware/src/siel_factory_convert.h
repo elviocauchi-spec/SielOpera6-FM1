@@ -168,8 +168,10 @@ static void siel_factory_to_patch(patch_t *p, uint8_t program) {
     if (program < 90u) {
         const char *name = siel_factory_display_names[program];
         unsigned i;
-        for (i = 0u; i < PATCH_NAME; ++i)
-            p->v[NPARAM + i] = name[i] ? (uint8_t)name[i] : (uint8_t)' ';
+        for (i = 0u; i < PATCH_NAME && name[i]; ++i)
+            p->v[NPARAM + i] = (uint8_t)name[i];
+        for (; i < PATCH_NAME; ++i)
+            p->v[NPARAM + i] = (uint8_t)' ';
     } else {
         /* Reserved service/calibration programs 90..94 retain their IDs. */
         p->v[NPARAM + 0u] = 'S';
