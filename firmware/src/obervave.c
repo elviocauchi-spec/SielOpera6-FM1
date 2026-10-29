@@ -23,6 +23,7 @@ static void app_idle(void);
 #include "obv_engine.h"
 #include "obv_seq.h"
 #include "obv_patches.h"
+#include "siel_factory_convert.h"  /* v0.8 preview: original 95 SIEL programs */
 
 static void app_audio(int32_t *out, uint32_t n)
 {
@@ -184,11 +185,12 @@ static uint32_t level_of(uint32_t vel) { return vel <= 50u ? 0u : vel <= 85u ? 1
 static uint32_t seq_pages(uint32_t t) { return pat.trk[t].len ? (pat.trk[t].len + 15u) / 16u : 1u; }
 static uint8_t cc_map[128];                     /* MIDI CC -> parameter + 1, 0 = none */
 
-static void prog_get(uint32_t n, patch_t *p)    /* program n: the user's, else the factory's (65-70: VIBE's, 71-99: INIT) */
+static void prog_get(uint32_t n, patch_t *p)    /* v0.8: 00..94 SIEL preview, 95..98 INIT; saved user patches win */
 {
     n %= NPROG;
     if (psect[n / PS_N].used[n % PS_N]) *p = psect[n / PS_N].p[n % PS_N];
-    else patch_from_factory(p, n < NFACT ? &FACTORY[n] : n < NFACT + NVIBE ? &FACT_VIBE[n - NFACT] : &FACT_INIT);
+    else if (n < SIEL_FACTORY_PROGRAMS) siel_factory_to_patch(p, (uint8_t)n);
+    else patch_from_factory(p, &FACT_INIT);
 }
 
 static void prog_put(uint32_t n, const patch_t *p)   /* program n is the user's now; saved when quiet */
