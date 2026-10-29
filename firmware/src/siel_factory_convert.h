@@ -144,6 +144,16 @@ static void siel_factory_to_patch(patch_t *p, uint8_t program) {
         p->v[P_LFO_PITCH] = (uint8_t)(p->v[P_LFO_PITCH] * 3u / 5u);
     }
 
+    /* v0.8.7: the original 16'/8'/4' oscillator A range was lost when
+     * FM1 used A as a fixed-pitch reference. Carry SIEL A footage in the
+     * two spare patch bytes, without changing native parameter indices or
+     * the saved 10-character patch name. The audio engine consumes this
+     * only when the marker and valid footage are both present. */
+    if (program < 90u) {
+        p->v[PATCH_BYTES - 2u] = 0xA6u;
+        p->v[PATCH_BYTES - 1u] = afoot;
+    }
+
     p->v[P_MODE] = M_POLY;
     p->v[P_FTYPE] = F_LP24;
     p->v[P_VINTAGE] = 0u;
