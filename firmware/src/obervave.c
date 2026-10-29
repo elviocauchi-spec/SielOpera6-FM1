@@ -19,11 +19,13 @@ static void app_idle(void);
 #include "platform.c"
 #include "obv_dsp.h"
 #include "obv_params.h"
+#include "obv_x_waves.h"            /* Opera X: sine, triangle, three-voice wide waves */
 #include "obv_fx.h"
 #include "obv_engine.h"
 #include "obv_seq.h"
 #include "obv_patches.h"
 #include "siel_factory_convert.h"  /* v0.8 preview: original 95 SIEL programs */
+#include "obv_x_patches.h"          /* Opera X: 95-98 playable showcase presets */
 
 static void app_audio(int32_t *out, uint32_t n)
 {
@@ -190,6 +192,7 @@ static void prog_get(uint32_t n, patch_t *p)    /* v0.8: 00..94 SIEL preview, 95
     n %= NPROG;
     if (psect[n / PS_N].used[n % PS_N]) *p = psect[n / PS_N].p[n % PS_N];
     else if (n < SIEL_FACTORY_PROGRAMS) siel_factory_to_patch(p, (uint8_t)n);
+    else if (n >= 95u && n < 99u) opera_x_factory_patch(p, (uint8_t)(n - 95u));
     else patch_from_factory(p, &FACT_INIT);
 }
 
@@ -696,7 +699,7 @@ static void param_value(char *s, uint32_t p, uint32_t v)   /* <= 7 characters */
     switch (PDEF[p].kind) {
     case K_BIP: if (v < 64u) { scat(s, "-"); fmt_u(t, 64u - v); } else { scat(s, v > 64u ? "+" : ""); fmt_u(t, v - 64u); } scat(s, t); break;
     case K_ONOFF: scat(s, v ? "ON" : "OFF"); break;
-    case K_WAVE: scat(s, WAVE_NAME[v & 3u]); break;
+    case K_WAVE: scat(s, WAVE_NAME[v & 7u]); break;
     case K_FTYPE: scat(s, FTYPE_NAME[v % NFTYPE]); break;
     case K_MODE: scat(s, MODE_NAME[v & 3u]); break;
     case K_LSHAPE: scat(s, LSHAPE_NAME[v % 6u]); break;
