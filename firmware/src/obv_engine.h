@@ -596,7 +596,11 @@ static void block_globals(part_t *g)            /* a sound's derived numbers, on
     d = pv[P_DRIVE]; g->drive_q12 = d ? 4096 + (d * d * 7 * 4096 / 16129) : 0;
     g->cut_sm += ((pv[P_CUTOFF] << 8) - g->cut_sm) >> 6;   /* tau = 64 blocks = 23 ms */
     g->reso_sm += ((pv[P_RESO] << 8) - g->reso_sm) >> 6;
-    g->reso_k = 8192 - g->reso_sm * 8400 / (127 * 256);
+    /* OPERA v0.7: keep the original stable 12 dB filter for general sounds.
+     * When LP24 is selected, a modestly gentler resonance control law avoids
+     * excessively sharp peaks at moderate settings. This is an SSM-inspired
+     * voicing adjustment, NOT a component-level SSM2044 circuit simulation. */
+    g->reso_k = 8192 - g->reso_sm * (pv[P_FTYPE] == F_LP24 ? 7600 : 8400) / (127 * 256);
     g->vint = pv[P_VINTAGE];
     g->sus_f = pv[P_FS] * (ENV_ONE / 127);
     g->sus_a = pv[P_AS] * (ENV_ONE / 127);
@@ -720,7 +724,20 @@ static void voice_render(voice_t *v, int32_t *out)
         case F_BP12: y = bp; break;
         case F_NOTCH: y = hp + lp; break;
         case F_SEM: y = lp + (((hp - lp) * morph_q) >> 7); break;   /* the SEM's LP .. notch .. HP pot */
-        default: y = svf_lp(&v->c2, &v->f2, lp); break;
+        default: {
+            /* OPERA v0.7: gently compress the interstage signal of the
+             * cascaded 24 dB low-pass. This mild, continuous transfer
+             * lowers louder peaks before the second stage; both SVF
+             * sections and their coefficient/state layout remain unchanged.
+             * Dry, low-level sounds stay very close to the proven baseline. */
+            int32_t inter = lp;
+            if (inter > 12000)
+                inter = 12000 + ((inter - 12000) * 3) / 4;
+            else if (inter < -12000)
+                inter = -12000 + ((inter + 12000) * 3) / 4;
+            y = svf_lp(&v->c2, &v->f2, inter);
+            break;
+        }
         }
         y = clampi(y, -65000, 65000);
         amp = amp0 + ((da * (int32_t)i) >> 4);
