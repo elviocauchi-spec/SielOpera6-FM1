@@ -108,18 +108,24 @@ static void cv_knob(int32_t cx, int32_t cy, const char *label, const char *value
 }
 
 /* 7-segment digit, w 16 x h 28, thickness 4: segments a (top) b c d (bottom) e f g (middle) */
+/* Seven-segment LED digits: segment order a,b,c,d,e,f,g.
+ * Upper and lower vertical strokes meet the central bar without a dark
+ * half-segment. Each side uses a continuous, symmetrical 12-pixel stroke. */
 static void cv_seg7(int32_t x, int32_t y, uint32_t digit, uint16_t on, uint16_t off)
 {
     static const uint8_t SEG[10] = {0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F, 0x6F};
     uint32_t m = SEG[digit % 10u];
     const int32_t t = 4, w = 16, h = 28;
-    cv_rect(x + 2, y, w - 4, t, m & 1u ? on : off);                       /* a */
-    cv_rect(x + w - t, y + 2, t, h / 2 - 3, m & 2u ? on : off);           /* b */
-    cv_rect(x + w - t, y + h / 2 + 1, t, h / 2 - 3, m & 4u ? on : off);   /* c */
-    cv_rect(x + 2, y + h - t, w - 4, t, m & 8u ? on : off);               /* d */
-    cv_rect(x, y + h / 2 + 1, t, h / 2 - 3, m & 16u ? on : off);          /* e */
-    cv_rect(x, y + 2, t, h / 2 - 3, m & 32u ? on : off);                  /* f */
-    cv_rect(x + 2, y + h / 2 - 2, w - 4, t, m & 64u ? on : off);          /* g */
+    /* Horizontal bars: top, middle and bottom. */
+    cv_rect(x + 2, y, w - 4, t, m & 0x01u ? on : off);              /* a */
+    cv_rect(x + 2, y + h / 2 - t / 2, w - 4, t, m & 0x40u ? on : off); /* g */
+    cv_rect(x + 2, y + h - t, w - 4, t, m & 0x08u ? on : off);      /* d */
+    /* Vertical bars overlap the horizontal bars by two pixels. This avoids
+     * gaps caused by truncation of half-height integer coordinates. */
+    cv_rect(x + w - t, y + 2, t, h / 2, m & 0x02u ? on : off);      /* b */
+    cv_rect(x + w - t, y + h / 2 - 2, t, h / 2, m & 0x04u ? on : off); /* c */
+    cv_rect(x, y + 2, t, h / 2, m & 0x20u ? on : off);              /* f */
+    cv_rect(x, y + h / 2 - 2, t, h / 2, m & 0x10u ? on : off);      /* e */
 }
 
 /* the stripes: three bands of `band` px from row y0. In the letters (text_only, the logo) the text takes the
