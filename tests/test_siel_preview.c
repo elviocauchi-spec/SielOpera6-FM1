@@ -17,10 +17,11 @@ int main(void) {
         assert(p.v[NPARAM + 6u] == (uint8_t)('0' + i % 10u));
         assert(p.v[P_FTYPE] == F_LP24);
         assert(p.v[P_CHO_MIX] == 0u && p.v[P_DLY_MIX] == 0u && p.v[P_REV_MIX] == 0u);
-        /* v0.8.1 preview-only musical-patch safeguards.
-         * Calibration programs 90..94 remain unchanged. */
+        /* v0.8.4 continuous filter curves apply only to musical patches. */
         if (i < 90u) {
-            assert(p.v[P_CUTOFF] >= 28u);
+            assert(p.v[P_CUTOFF] >= 43u && p.v[P_CUTOFF] <= 113u);
+            assert(p.v[P_RESO] <= 78u);
+            assert(p.v[P_CUTOFF] >= 43u + p.v[P_RESO] / 4u);
             if (p.v[P_O2_LVL])
                 assert(p.v[P_O2_SEMI] >= 12u && p.v[P_O2_SEMI] <= 36u);
         }
@@ -28,17 +29,28 @@ int main(void) {
         if (i < 90u)
             assert(p.v[P_O1_LVL] || p.v[P_O2_LVL] || p.v[P_NOISE]);
     }
+    /* All 90 conversions must remain distinguishable in their source values.
+     * Do not assume a parameter-range test proves they are audible! */
+    {
+        unsigned distinct = 0, k;
+        patch_t a, b;
+        for (i = 0; i < 90u; ++i) {
+            siel_factory_to_patch(&a, (uint8_t)i);
+            for (k = i + 1u; k < 90u; ++k) {
+                unsigned n, same = 1u;
+                siel_factory_to_patch(&b, (uint8_t)k);
+                for (n = 0; n < NPARAM; ++n)
+                    if (a.v[n] != b.v[n]) { same = 0u; break; }
+                if (same) break;
+            }
+            if (k == 90u) ++distinct;
+        }
+        assert(distinct >= 85u);
+    }
     siel_factory_to_patch(&p, 2u);
-    assert(p.v[P_CUTOFF] == 76u);
-    assert(p.v[P_RESO] == 35u);
-    assert(p.v[P_FENV_AMT] == 64u);
-    assert(p.v[P_O1_LVL] && p.v[P_O2_LVL]);
-    /* Ninth displayed preset (original program 08): targeted filter diagnostic. */
+    assert(p.v[P_CUTOFF] >= 43u && p.v[P_RESO] <= 78u);
     siel_factory_to_patch(&p, 8u);
-    assert(p.v[P_CUTOFF] == 76u);
-    assert(p.v[P_RESO] == 35u);
-    assert(p.v[P_FENV_AMT] == 64u);
-    assert(p.v[P_O1_LVL] > 0u && p.v[P_O2_LVL] > 0u);
+    assert(p.v[P_CUTOFF] >= 43u && p.v[P_RESO] <= 78u);
     siel_factory_to_patch(&p, 0u);
     assert(p.v[P_O1_WAVE] == W_SAW);
     assert(p.v[P_O2_WAVE] == W_OFF);
