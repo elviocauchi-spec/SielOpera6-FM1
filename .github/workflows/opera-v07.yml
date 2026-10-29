@@ -1,0 +1,36 @@
+name: Build OPERA-FM1 v0.7 test firmware
+on:
+  workflow_dispatch:
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: python3 -m pip install Pillow
+      - name: Install JieLi compiler
+        run: sh tools/get_toolchain.sh
+      - name: Download AC79 SDK
+        shell: bash
+        run: |
+          set -e
+          for i in 1 2 3; do
+            echo "SDK download attempt $i/3"
+            rm -rf "$HOME/fw-AC79_AIoT_SDK"
+            if timeout 180s git clone --progress --depth 1 --single-branch --branch AC79NN_SDK_V1.2.1_2023-12-13 https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git "$HOME/fw-AC79_AIoT_SDK"; then
+              break
+            fi
+          done
+          test -f "$HOME/fw-AC79_AIoT_SDK/cpu/wl82/tools/uboot.boot"
+      - name: Build experimental Opera v0.7
+        run: BOARD=fm1 sh build.sh
+      - name: Verify compiled file
+        run: test -s build/obervave.fwsc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OPERA-FM1-v0.7-experimental
+          path: build/obervave.fwsc
+          if-no-files-found: error
