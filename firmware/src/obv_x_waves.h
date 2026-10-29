@@ -2,7 +2,7 @@
 /* OPERA X: musical oscillator extensions. Pure fixed point, no FPU, no runtime
  * table generation, and no new parameters in the original Opera 6 bank.
  *
- * SINE: 256-entry interpolated wavetable (linear, 24-bit phase fraction).
+ * SINE: 256-entry interpolated wavetable (linear, 12-bit phase fraction).
  * TRI: continuous triangle, low aliasing because harmonics decay as 1/n^2.
  * SUP SAW / SUP PLS: three independent polyBLEP oscillators with a shared
  * root pitch and two gently detuned side oscillators. PW knob = width.
@@ -44,7 +44,7 @@ static inline int32_t opera_x_sine(uint32_t phase)
 {
     uint32_t i = phase >> 24;
     int32_t a = opera_x_sine_tab[i], diff = opera_x_sine_tab[i + 1u] - a;
-    return a + (int32_t)((diff * (int32_t)(phase & 0x00ffffffu)) >> 24);
+    return a + (int32_t)((diff * (int32_t)((phase >> 12) & 4095u)) >> 12);
 }
 static inline int32_t opera_x_triangle(uint32_t phase)
 {
