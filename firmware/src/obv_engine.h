@@ -667,6 +667,16 @@ static void voice_block(voice_t *v, uint32_t card)
     p1 = p8 + (pv[P_LFO_PITCH_TO] != TO_O2 ? lfo_to : 0);
     p2 = p8 + (pv[P_LFO_PITCH_TO] != TO_O1 ? lfo_to : 0) + ((int32_t)pv[P_O2_SEMI] - 24) * 256 + g->det_fine8
        + ((fenv * g->env_o2 * 97) >> 15);
+    /* SIEL preview only: restore the original oscillator A footage.
+     * 1=16' (-12 semitones), 2=8' (reference), 3=4' (+12).
+     * Both oscillators follow A's baseline; P_O2_SEMI retains B/A offset.
+     * Reserved-byte marker avoids changing the sound of other FM1 patches. */
+    if (pv[PATCH_BYTES - 2u] == 0xA6u &&
+        pv[PATCH_BYTES - 1u] >= 1u && pv[PATCH_BYTES - 1u] <= 3u) {
+        int32_t octave8 = ((int32_t)pv[PATCH_BYTES - 1u] - 2) * (12 * 256);
+        p1 += octave8;
+        p2 += octave8;
+    }
     v->inc1 = pitch_inc(p1);
     v->inc2 = pitch_inc(p2);
     tmp = (lfo * g->lfo_pwd);
