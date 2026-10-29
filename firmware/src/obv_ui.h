@@ -1,24 +1,24 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* The screen: an own design (no copied trade dress). A blue-black panel with light blue legends, as the classic
- * American polys had them, a red LED program number drawn as 7-segment digits, "OBERVAVE" with three blue bands
- * through the lower half of the letters, four anti-aliased round knobs with a blue value arc, a scope strip, eight
- * round voice LEDs. 240 x 240:
+/* OPERA-FM1 v0.8.6 UI preview: vintage SIEL-inspired colors and compact
+ * panel identity, while keeping the existing 240x240 FM1 page and control
+ * structure. No changes to synthesis, factory bytes, or MIDI handling.
+ * A red LED program number, four anti-aliased knobs, scope and voice LEDs. 240 x 240:
  *   0..43    header: program number, name, tags, the logo
  *   46..143  the page: title between rules, four knobs (label above, value below)
  *   146..195 the scope
  *   200..236 the voice LEDs */
-#define C_PANEL RGB(14, 18, 28)                 /* blue-black */
-#define C_CREAM RGB(226, 232, 240)              /* the legends: near white, a little cold */
-#define C_AMBER RGB(96, 176, 255)               /* the accent: the light blue of the originals' silkscreen */
-#define C_RED RGB(255, 44, 32)
+#define C_PANEL RGB(20, 20, 19)                 /* warm charcoal: vintage instrument panel */
+#define C_CREAM RGB(244, 234, 213)              /* ivory instrument legends */
+#define C_AMBER RGB(241, 178, 71)               /* warm amber for active parameters */
+#define C_RED RGB(244, 64, 48)
 #define C_RED_DIM RGB(62, 18, 14)
-#define C_DIMT RGB(120, 142, 172)
-#define C_RULE RGB(48, 60, 84)
-#define C_KNOB RGB(38, 44, 56)
-#define C_KNOB_HI RGB(84, 96, 118)
-#define C_SCOPE_BG RGB(8, 12, 22)
-#define C_SCOPE_MID RGB(28, 40, 64)
-static const uint16_t STRIPE[3] = {RGB(30, 70, 190), RGB(60, 130, 235), RGB(120, 190, 255)};
+#define C_DIMT RGB(174, 159, 137)
+#define C_RULE RGB(88, 74, 58)
+#define C_KNOB RGB(51, 47, 42)
+#define C_KNOB_HI RGB(123, 110, 91)
+#define C_SCOPE_BG RGB(13, 14, 13)
+#define C_SCOPE_MID RGB(73, 58, 43)
+static const uint16_t STRIPE[3] = {RGB(133, 45, 35), RGB(202, 101, 43), RGB(241, 178, 71)};
 
 /* a * (1 - t) + b * t for RGB565, t = 0..256 */
 static uint16_t blend565(uint16_t a, uint16_t b, uint32_t t)
@@ -139,9 +139,9 @@ static void cv_stripes(int32_t y0, int32_t band, int32_t gap, int32_t x_to, int3
             }
 }
 
-static void draw_logo_small(int32_t x, int32_t y)   /* "OBERVAVE" in FONT_S with the bands through the lower half */
+static void draw_logo_small(int32_t x, int32_t y)   /* Compact UI identity (the full startup image is still being redesigned). */
 {
-    cv_text(x, y, &FONT_S, "OBERVAVE", C_CREAM);
+    cv_text(x, y, &FONT_S, "OPERA 6", C_CREAM);
     cv_stripes(y + 10, 2, 0, 0, 1);
 }
 
@@ -165,7 +165,7 @@ static void ui_header(uint32_t prog, const uint8_t *name, uint32_t edited, const
     cv_text(54, 4, &FONT_S, tl, c);
     cv_text(66, 4, &FONT_S, n, trk ? c : C_CREAM);
     cv_text(54, 22, &FONT_S, tags, C_DIMT);
-    draw_logo_small(240 - 4 - text_w(&FONT_S, "OBERVAVE"), 4);
+    draw_logo_small(240 - 4 - text_w(&FONT_S, "OPERA 6"), 4);
     cv_rect(0, 42, 240, 1, C_RULE);
     cv_blit(0, 0);
 }
@@ -540,7 +540,7 @@ static void splash_frame(uint32_t fade, int32_t x_to, uint32_t sub)
         if (++x == SPLASH_W) { x = 0; y++; }
     }
     if (sub) {                                      /* the line under the logo, as in assets/logo.png, in two rows */
-        const char *t1 = "4-TRACK ANALOG POLY", *t2 = "M-VAVE FM-1";
+        const char *t1 = "SIEL OPERA 6 / FM1", *t2 = "UI PREVIEW 0.8.6";
         uint16_t c = sub >= 256u ? C_AMBER : blend565(C_PANEL, C_AMBER, sub);
         cv_text((240 - text_w(&FONT_S, t1)) / 2, SPLASH_H + 14, &FONT_S, t1, c);
         cv_text((240 - text_w(&FONT_S, t2)) / 2, SPLASH_H + 28, &FONT_S, t2, c);
