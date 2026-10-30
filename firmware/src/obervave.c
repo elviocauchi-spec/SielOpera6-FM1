@@ -25,6 +25,7 @@ static void app_idle(void);
 #include "obv_x_formants.h"         /* Opera X v0.14: absolute-frequency vowel resonances */
 #include "obv_x_routes.h"           /* Opera X v0.15: editable LFO -> ENV AMT and MORPH */
 #include "obv_x_pwm.h"              /* Opera X v0.17: playable pulse/wide-wave LFO depth */
+#include "obv_x_env_morph.h"        /* Opera X v0.18: per-note spectral/vowel ADSR movement */
 #include "obv_x_drive.h"            /* Opera X: correctly staged parallel stereo drive */
 #include "obv_fx.h"
 #include "obv_engine.h"
@@ -907,6 +908,12 @@ static void draw_page(void)
             scat(k[i].value, "%");
         } else if (p >= 0) {
             k[i].label = PDEF[p].name;
+            /* In experimental spectral/VOX sounds the FILTER envelope can
+             * morph harmonics, not just bend OSC2 pitch. The same bipolar
+             * third OSC MOD knob remains fully compatible with old banks. */
+            if (p == P_ENV_O2 &&
+                opera_x_env_morph_enabled(ed_patch((uint32_t)p)->v))
+                k[i].label = "ENV>MORPH";
             /* PWM acts as stereo detune-width modulation when its target
              * is SUP SAW; on actual pulse waves it remains true PWM. */
             if (p == P_LFO_PWM) {
