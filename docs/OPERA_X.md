@@ -119,3 +119,78 @@ buffer is about 5800us; a prudent release threshold is a worst-case
 peak of <=4000us on real FM1, with further stress testing before we
 raise polyphony. Host unit tests and a successful build do not establish
 hardware CPU margin or guarantee subjective sonic quality.
+
+## v0.11 EVOLVE preview — first substantial sound-design corrections
+
+Based on listening feedback, the prior patch motion was too slow and
+each note was hard-panned to a different physical-card location.
+
+### Audible and layered LFO motion
+
+- A track's original LFO still has an editable RATE (LFO page) and
+  FILTER / PWM / PITCH depths (LFO DEST page).
+- CLOUDPAD now has a substantial ~0.65 Hz original LFO filter sweep
+  as well as its separate 4-second expressive filter arc. Its earlier
+  vibrato depth of 4 quantized to *zero* in the existing squared depth
+  curve; the new nonzero depth is deliberate.
+- SILKSTR has noticeable PWM and filter motion on the original LFO,
+  plus an independent ~5-second filter arc.
+- A second timbre modulation signal (2x the expressive LFO phase with
+  an offset) animates the wide-wave detune and the harmonic balance.
+  The filter, beating and oscillator layer are no longer all static.
+- The slow motion is still stored in the existing v0.10 reserved patch
+  extension bytes. No factory SIEL 00–94 programs change.
+- On the four X factory programs, OX_RATE is specified in the patch
+  internally (currently not a separately exposed panel control).
+  To hear obvious manual modulation edits, use the traditional LFO
+  and LFO DEST pages, especially FILTER, PWM and RATE.
+
+### Chord stereo
+
+The original voice-card pan spread deliberately distributed different
+held notes left and right. This is inappropriate for wide pads.
+The X POLY voice note pan is now centered; the independent detuned
+oscillators make each note internally stereo. Legacy SIEL patches
+keep their previous voice-card positioning.
+
+### DRIVE signal-chain fixes
+
+The original parallel DRIVE return used a gain around 4000 but shifted
+by 15 bits, producing only 12% full-scale return at MIX 127. v0.11
+uses a proper Q15 range (0–25500) for musically meaningful wet gain,
+without bypassing the existing output limiter.
+
+Also, DRIVE is a *send/return effect*, not a direct insert: previously
+the mixer often had DRIVE SEND = 0, so changing the DRIVE page did
+nothing. Loading an unsaved factory X preview 95–98 now selects
+distinct per-track DRIVE sends (32, 38, 88, 75). This does not
+change the shared effects chain. After loading a preset, MIXER's
+DRIVE send can be adjusted by the player; loading the X factory
+sound again restores its recommended send. Saved user patches
+do not auto-replace mixer sends.
+
+The DRIVE send, tone filter and return have independent LEFT and RIGHT
+channels so a wide pad no longer collapses through the distortion
+path. Global chorus/reverb remain shared effects; they must be enabled
+separately if desired.
+
+### Listening and profiling checklist
+
+1. In stereo headphones, load 95 and play a four-note chord.
+   Notes should no longer jump from ear to ear. Hold it for at
+   least 8 seconds to hear filter, wavering detune and layer movement.
+2. Compare 96 with 95, especially its more pronounced PWM flutter.
+3. In the LFO page change RATE, then in LFO DEST increase FILTER or
+   PWM: the changes should be audible. Avoid extreme pitch depths
+   until recording and tuning have been checked.
+4. For 97 or 98 open DRIVE: changing TYPE, AMOUNT and MIX should be
+   obvious, not a subtle volume difference. Set MIXER DRIVE SEND
+   higher/lower for more/less parallel saturation.
+5. On real FM1 under a six-note sustained 95 pad plus chorus, reverb
+   and drive, read GLOBAL's audio render time (half-buffer deadline
+   roughly 5800us); target <=4000us with margin under sustained
+   maximum load. Software tests cannot verify real hardware timing.
+
+Still missing: a fully editable modulation matrix, elaborate
+multi-layer wavetable synthesis and integrated per-preset ambience.
+Those remain future engine milestones, not features of v0.11.
