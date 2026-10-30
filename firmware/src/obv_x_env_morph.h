@@ -14,13 +14,22 @@
 #ifndef OBV_X_ENV_MORPH_H
 #define OBV_X_ENV_MORPH_H
 
-static inline int opera_x_env_morph_enabled(const uint8_t *patch)
+static inline int opera_x_env_morph_eligible(const uint8_t *patch)
 {
     if (!opera_x_expressive(patch)) return 0;
     return patch[P_O1_WAVE] == W_SPECTRAL ||
            patch[P_O1_WAVE] == W_VOX ||
            patch[P_O2_WAVE] == W_SPECTRAL ||
            patch[P_O2_WAVE] == W_VOX;
+}
+
+/* Only patches explicitly saved with the v0.18 marker use ENV>MORPH.
+ * A saved v0.17 spectral patch still uses the old OSC2 pitch envelope,
+ * even if its bipolar P_ENV_O2 parameter is nonzero. */
+static inline int opera_x_env_morph_enabled(const uint8_t *patch)
+{
+    return opera_x_env_morph_eligible(patch) &&
+           patch[OX_ROUTE_TAG_AT] == OX_ENV_MORPH_TAG;
 }
 
 /* Move toward the selected end of the five-stage table according to
