@@ -164,10 +164,7 @@ static void voice_start(voice_t *v, uint32_t part, uint32_t note, uint32_t vel, 
      * different pan positions. That made a chord sound like unrelated notes
      * jumping left and right. X patches keep every note centered and make
      * width inside the note using their detuned side oscillators instead. */
-    if (opera_x_expressive(pv) && pv[P_MODE] == M_POLY)
-        voice_pan(v, 0);
-    else
-        voice_pan(v, pan);
+    voice_pan(v, opera_x_note_pan(pv, pan));
 }
 
 static int part_grouped(uint32_t part)
