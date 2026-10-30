@@ -7,6 +7,16 @@
 #ifndef OBV_X_PATCHES_H
 #define OBV_X_PATCHES_H
 
+/* These are explicit per-patch mixer DRIVE sends, not replacement master
+ * effects settings. Users may subsequently adjust them in the MIXER.
+ * Pads retain a gentle color, while lead and bass have considerably
+ * more saturation available from the DRIVE page. */
+static inline uint8_t opera_x_factory_drive_send(uint8_t index)
+{
+    static const uint8_t send[4] = {32u, 38u, 88u, 75u};
+    return index < 4u ? send[index] : 0u;
+}
+
 static void opera_x_factory_patch(patch_t *p, uint8_t index)
 {
     static const char *const names[4] = {
