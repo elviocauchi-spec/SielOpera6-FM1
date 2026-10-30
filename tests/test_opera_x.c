@@ -9,6 +9,7 @@
 #include "obv_params.h"
 #include "obv_x_waves.h"
 #include "obv_x_motion.h"
+#include "obv_x_drive.h"
 #include "obv_x_patches.h"
 
 static int64_t test_osc(uint32_t wave)
@@ -92,6 +93,36 @@ int main(void)
                (10000 - (lpf * opera_x_width_gain(0u) >> 12)));
     }
 
+    /* v0.11: FX DRIVE must have substantial, monotonic wet gain;
+     * before this patch the full return was only 4000/32768. */
+    assert(opera_x_drive_return_gain(0u) == 0);
+    assert(opera_x_drive_return_gain(127u) == 25500);
+    assert(opera_x_drive_return_gain(64u) > 12000);
+    assert(opera_x_drive_pre_gain(127u) > opera_x_drive_pre_gain(10u));
+    assert(opera_x_drive_shape(1000, 0u) > 1000);
+    assert(opera_x_drive_shape(1000, 2u) > opera_x_drive_shape(1000, 0u));
+    assert(opera_x_drive_shape(-1000, 2u) < 0);
+
+    /* v0.11: modulation must be clearly different within a few seconds
+     * rather than taking 20 seconds for its first barely audible arc. */
+    {
+        uint32_t ph = 0u, n;
+        int32_t start = opera_x_filter_delta(opera_x_motion(ph), 82u);
+        int32_t timbre_before = opera_x_timbre_motion(ph);
+        for (n = 0u; n < 5500u; ++n)
+            ph += opera_x_motion_inc(59u); /* about two seconds of audio */
+        assert(opera_x_filter_delta(opera_x_motion(ph), 82u) - start > 2000);
+        /* Second timbre wave is not the same function as first. */
+        assert(opera_x_timbre_motion(ph) != opera_x_motion(ph));
+        assert(opera_x_timbre_motion(ph) != timbre_before);
+        assert(opera_x_animated_detune(70u, 32767, 80u) > 70u);
+        assert(opera_x_animated_detune(70u, -32768, 80u) < 70u);
+        assert(opera_x_animated_level(96, 32767, 80u) > 96);
+        assert(opera_x_animated_level(96, -32768, 80u) < 96);
+    }
+    patch_defaults(&patch);
+    assert(opera_x_note_pan(patch.v, -45) == -45); /* legacy stereo unchanged */
+
     /* Each free slot has a meaningful and playable musical sound. */
     for (i = 0; i < 4u; ++i) {
         opera_x_factory_patch(&patch, (uint8_t)i);
@@ -107,15 +138,27 @@ int main(void)
         assert(patch.v[OX_WIDTH] <= 127u && patch.v[OX_TONE] <= 127u);
         assert(patch.v[OX_RATE] <= 127u);
         assert(patch.v[OX_MAGIC] == OX_TAG);
+        assert(opera_x_factory_drive_send((uint8_t)i) > 0u);
+        if (i < 2u) {
+            assert(opera_x_note_pan(patch.v, -60) == 0);
+            assert(opera_x_note_pan(patch.v, 40) == 0);
+            assert(patch.v[OX_RATE] >= 50u);
+            assert(patch.v[OX_TONE] >= 60u);
+        } else {
+            assert(opera_x_note_pan(patch.v, 40) == 40); /* mono stays mono */
+        }
     }
     opera_x_factory_patch(&patch, 0u);
     assert(patch.v[P_O1_WAVE] == W_SUPERSAW);
+    assert(patch.v[P_LFO_FLT] >= 45u && patch.v[P_LFO_RATE] >= 50u);
+    assert(patch.v[P_LFO_PITCH] >= 12u); /* old setting 4 quantized to zero */
     opera_x_factory_patch(&patch, 1u);
     assert(patch.v[P_O1_WAVE] == W_SUPERPULSE);
+    assert(patch.v[P_LFO_PWM] >= 70u && patch.v[P_LFO_FLT] >= 30u);
     opera_x_factory_patch(&patch, 2u);
     assert(patch.v[P_MODE] == M_MONO);
     opera_x_factory_patch(&patch, 3u);
     assert(patch.v[P_O1_WAVE] == W_SINE);
-    puts("OPERA X: extended waves and four playable factory sounds pass");
+    puts("OPERA X: stereo, dual-speed modulation, DRIVE and four musical previews pass");
     return 0;
 }
