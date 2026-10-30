@@ -704,9 +704,16 @@ static void voice_block(voice_t *v, uint32_t card)
     /* With LFO -> MORPH enabled, a VOX note needs its own two formant
      * coefficients: main LFO phase may be spread and fade per voice.
      * Coefficients are calculated once per 16 samples, never per sample. */
-    if (g->vox_active && opera_x_route_get(pv, OX_TO_MORPH)) {
+    if (g->vox_active &&
+        (opera_x_route_get(pv, OX_TO_MORPH) ||
+         (opera_x_env_morph_enabled(pv) && pv[P_ENV_O2] != 64u))) {
+        /* Vowel resonances must track the *same* per-note spectral
+         * position as the oscillator. Both editable LFO->MORPH and
+         * filter-envelope->MORPH are applied in the same order. */
         uint8_t m = opera_x_vox_position(pv, g->x_timbre_val, g->x_motion_val);
         m = opera_x_lfo_morph(m, lfo, opera_x_route_get(pv, OX_TO_MORPH));
+        if (opera_x_env_morph_enabled(pv))
+            m = opera_x_env_morph_apply(m, fenv, pv[P_ENV_O2]);
         opera_x_formant_coeffs(m, &v->vox_lfo_c1, &v->vox_lfo_c2);
     }
     /* vintage: a slow random walk on the pitch */
@@ -721,7 +728,7 @@ static void voice_block(voice_t *v, uint32_t card)
     lfo_to = (lfo * g->lfo_pd * 24) >> 15;
     p1 = p8 + (pv[P_LFO_PITCH_TO] != TO_O2 ? lfo_to : 0);
     p2 = p8 + (pv[P_LFO_PITCH_TO] != TO_O1 ? lfo_to : 0) + ((int32_t)pv[P_O2_SEMI] - 24) * 256 + g->det_fine8
-       + ((fenv * g->env_o2 * 97) >> 15);
+       + (opera_x_env_morph_enabled(pv) ? 0 : ((fenv * g->env_o2 * 97) >> 15));
     /* SIEL preview only: restore the original oscillator A footage.
      * 1=16' (-12 semitones), 2=8' (reference), 3=4' (+12).
      * Both oscillators follow A's baseline; P_O2_SEMI retains B/A offset.
@@ -770,9 +777,12 @@ static void voice_render(voice_t *v, int32_t *out)
     /* Choose formant coefficients once per 16-frame block, not every
      * audio sample. Only VOX patches with LFO->MORPH need per-voice
      * coefficients; the standard shared formant path stays cheaper. */
-    uint32_t vox_lfo_on = g->vox_active && opera_x_route_get(g->p->v, OX_TO_MORPH);
-    const svf_coef_t *vox_c1 = vox_lfo_on ? &v->vox_lfo_c1 : &g->vox_c1;
-    const svf_coef_t *vox_c2 = vox_lfo_on ? &v->vox_lfo_c2 : &g->vox_c2;
+    uint32_t x_env_on = opera_x_env_morph_enabled(g->p->v) &&
+                        g->p->v[P_ENV_O2] != 64u;
+    uint32_t vox_per_voice = g->vox_active &&
+        (opera_x_route_get(g->p->v, OX_TO_MORPH) || x_env_on);
+    const svf_coef_t *vox_c1 = vox_per_voice ? &v->vox_lfo_c1 : &g->vox_c1;
+    const svf_coef_t *vox_c2 = vox_per_voice ? &v->vox_lfo_c2 : &g->vox_c2;
     uint32_t ft = g->ftype, xq = g->xmod_q, sy = g->sync_on, ww1 = g->w1, ww2 = g->w2;
     uint32_t x_stereo = opera_x_expressive(g->p->v) ? g->p->v[OX_WIDTH] : 0u;
     int32_t x_wide_gain = opera_x_width_gain((uint8_t)x_stereo);
@@ -788,13 +798,23 @@ static void voice_render(voice_t *v, int32_t *out)
     {
         uint8_t morph_route = opera_x_route_get(g->p->v, OX_TO_MORPH);
         if (morph_route) {
-            /* The editable LFO adds extra spectral movement around the
-             * existing automatic evolution. No extra audio-rate work. */
+            /* Editable LFO adds spectral movement around the automatic
+             * evolution, independent of the ADSR modulation below. */
             if (ww1 == W_SPECTRAL || ww1 == W_VOX)
                 morph1 = opera_x_lfo_morph(morph1, v->x_lfo_value, morph_route);
             if (ww2 == W_SPECTRAL || ww2 == W_VOX)
                 morph2 = opera_x_lfo_morph(morph2, v->x_lfo_value, morph_route);
         }
+    }
+    if (x_env_on) {
+        /* Use the already computed filter envelope; no extra envelope
+         * object or per-sample work, and the manual MORPH baseline
+         * returns as the envelope falls during key release. */
+        int32_t fenv_q15 = v->fe.level >> 9;
+        if (ww1 == W_SPECTRAL || ww1 == W_VOX)
+            morph1 = opera_x_env_morph_apply(morph1, fenv_q15, g->p->v[P_ENV_O2]);
+        if (ww2 == W_SPECTRAL || ww2 == W_VOX)
+            morph2 = opera_x_env_morph_apply(morph2, fenv_q15, g->p->v[P_ENV_O2]);
     }
     if (x_depth) {
         /* Two independently phased motions: filter opens over several
