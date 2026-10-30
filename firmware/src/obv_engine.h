@@ -798,11 +798,11 @@ static void voice_render(voice_t *v, int32_t *out)
              * or a second stereo filter. A simple one-pole low-pass
              * prevents a harsh unfiltered side channel in dark pads. */
             if (ww1 >= W_SUPERSAW)
-                side += ((v->x1_l.prev - v->x1_r.prev) * l1) >> 8;
+                side += opera_x_side_pair(v->x1_l.prev, v->x1_r.prev, l1);
             if (ww2 >= W_SUPERSAW)
-                side += ((v->x2_l.prev - v->x2_r.prev) * l2) >> 8;
+                side += opera_x_side_pair(v->x2_l.prev, v->x2_r.prev, l2);
             side = clampi(side, -65000, 65000);
-            v->x_wide_lp += (side - v->x_wide_lp) >> 3;
+            v->x_wide_lp = opera_x_side_smooth(v->x_wide_lp, side);
             wet = (v->x_wide_lp * x_wide_gain) >> 12;
             wet = (wet * amp) >> 16;
             out[2u * i] += ((y + wet) * gl) >> 12;
