@@ -194,3 +194,66 @@ separately if desired.
 Still missing: a fully editable modulation matrix, elaborate
 multi-layer wavetable synthesis and integrated per-preset ambience.
 Those remain future engine milestones, not features of v0.11.
+
+## v0.12 MORPH — spectral pad and vocal synth instead of two similar saw pads
+
+**User feedback driving this iteration:** 95 stayed mostly static, 96
+sounded too much like 95, and DRIVE finally worked. We keep v0.11's
+working DRIVE correction and centered polyphonic stereo.
+
+This is an actual new oscillator architecture, not an extra filter LFO:
+
+- **EVOLVE** (wave 8): interpolated wavetable transitioning between a
+  rich warm harmonic spectrum and a much brighter metallic/air spectrum.
+- **VOX MORPH** (wave 9): different, independently synthesized table
+  family, moving between two contrasting synthetic vowel/formant spectra.
+- Each family has two endpoints and five different harmonic-band tables
+  (maximum 32/16/8/4/2 partials), chosen by the note's fundamental
+  frequency to limit aliasing. Tables are generated offline, occupying
+  **10,280 bytes of static ROM**, no additional wavetable RAM.
+- **MORPH** replaces the oscillator's PW label when either wavetable
+  wave is selected. Its 0..127 value sets the center of the timbre.
+  A separate incommensurate-speed modulation source scans around that
+  center for the X factory sounds. This is a change in the harmonic
+  content at the OSCILLATOR, even with a static open filter.
+- A second, independently clocked (non-identical rate) LFO replaces
+  the old precisely 2:1 correlated modulator. This means that spectral
+  sweep, filter motion and auxiliary detuning do not repeat as one
+  simple rhythmic loop.
+
+### Rebuilt sound identities
+
+| Program | Name | Main oscillator | Supporting oscillator |
+| --- | --- | --- | --- |
+| 95 | X AURORA | EVOLVE spectral morph | detuned supersaw for gentle stereo bloom |
+| 96 | X VOXSCAPE | VOX MORPH synthetic vowels | higher superpulse, subtle breath |
+| 97 | X HOTLEAD | supersaw | saw; unchanged core |
+| 98 | X DEEPBASS | sine | superpulse; unchanged core |
+
+These X programs are in formerly INIT-only factory slots 95–98.
+Any previously saved user program in a slot will **override** the
+new ROM factory sound. A user's older saved program will not suddenly
+change waveform or become X AURORA, and the original 95 SIEL records
+00–94 are still untouched. To audition an updated ROM sound, the slot
+must not be occupied by saved user data.
+
+### How to judge v0.12
+
+Use headphones. On 95, hold a mid-register chord for 5–10 seconds;
+the harmonic shimmer should move independently of the filter. In
+the oscillator page, change MORPH from near 0 to near 127 and listen
+for the harmonic content changing even with no effects. On 96, use a
+similar chord: it should be a distinctly vocal/formant color and
+not another wide saw pad. If you hear two mostly identical sounds,
+verify the names displayed are **X AURORA** and **X VOXSCAPE**, and
+check whether old user patches were saved into 95 or 96.
+
+The DRIVE page works as in v0.11; the global chorus and reverb
+remain shared and don't automatically reset on preset changes.
+
+**Still unverified on hardware:** real render time for a six-note chord
+with both wavetable oscillators, global effects and DRIVE; the FM1
+audio half-buffer deadline is roughly 5800 microseconds. Aim for
+<=4000 microseconds peak under stress. A successful firmware build
+and waveform assertions do not establish beautiful sound by ear,
+performance headroom or alias-free operation over all notes.
