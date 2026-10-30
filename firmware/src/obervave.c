@@ -629,6 +629,17 @@ static void set_param_in(patch_t *d, uint32_t p, int32_t v)
 {
     v = clampi(v, 0, PDEF[p].max);
     if (d->v[p] == v) return;
+    /* Converting a previously saved Opera X wavetable patch is explicit:
+     * edit OSC MOD ENV>O2 to opt in to v0.18 ENV>MORPH. Old user
+     * patches keep their exact OSC2 envelope-pitch sound until edited.
+     * Preserve the older patch's existing LFO+ route values. */
+    if (p == P_ENV_O2 && opera_x_env_morph_eligible(d->v) &&
+        !opera_x_env_morph_enabled(d->v)) {
+        if (d->v[OX_ROUTE_TAG_AT] != OX_ROUTE_TAG &&
+            d->v[OX_ROUTE_TAG_AT] != OX_ENV_MORPH_TAG)
+            opera_x_route_set(d->v, OX_TO_ENV_AMT, 0u);
+        d->v[OX_ROUTE_TAG_AT] = OX_ENV_MORPH_TAG;
+    }
     d->v[p] = (uint8_t)v;
     trk_edited[(uint32_t)(d - live_p) % NTRK] = 1;
 }
