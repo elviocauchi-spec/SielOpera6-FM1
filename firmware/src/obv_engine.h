@@ -837,7 +837,7 @@ static void voice_render(voice_t *v, int32_t *out)
 
 /* the mixer: each sound into its own bus, then by its level and pan to the output, and by its three sends into the
  * effects (VIBE: chorus, delay, reverb side by side, as return tracks; their MIX = the return's level) */
-static int32_t bus[NPART][2u * HALF_FRAMES], snd_c[HALF_FRAMES], snd_d[HALF_FRAMES], snd_r[HALF_FRAMES], snd_v[HALF_FRAMES];
+static int32_t bus[NPART][2u * HALF_FRAMES], snd_c[HALF_FRAMES], snd_d[HALF_FRAMES], snd_r[HALF_FRAMES], snd_v[2u * HALF_FRAMES];
 static volatile uint32_t ui_trk_peak[NPART];   /* (VIBE) each track's peak after its fader, for the mixer's meters (the UI takes it) */
 static int32_t mix_g[NPART];                    /* the level as it moves (Q12, slewed per block: no zipper) */
 
@@ -850,7 +850,7 @@ static void engine_audio(int32_t *out, uint32_t n)
     vol_q12 = (int32_t)((ctl_cc7 * ctl_cc7) >> 2);
     for (p = 0; p < NPART; p++)
         for (i = 0; i < 2u * n; i++) bus[p][i] = 0;
-    for (i = 0; i < n; i++) snd_c[i] = snd_d[i] = snd_r[i] = snd_v[i] = 0;
+    for (i = 0; i < n; i++) { snd_c[i] = snd_d[i] = snd_r[i] = 0; snd_v[2u * i] = snd_v[2u * i + 1u] = 0; }
     for (b = 0; b < n; b += CTL) {
         engine_events();
         eng_t += CTL;
@@ -888,7 +888,11 @@ static void engine_audio(int32_t *out, uint32_t n)
             if (al > pk) pk = al;
             if (ar > pk) pk = ar;
             out[2u * i] += l; out[2u * i + 1u] += r;
-            snd_c[i] += (m * sc) >> 7; snd_d[i] += (m * sd) >> 7; snd_r[i] += (m * sr) >> 7; snd_v[i] += (m * sv) >> 7;
+            snd_c[i] += (m * sc) >> 7; snd_d[i] += (m * sd) >> 7; snd_r[i] += (m * sr) >> 7;
+            /* Never collapse the drive send to mono. A stereo pad should
+             * retain its internal space even when distortion is applied. */
+            snd_v[2u * i] += (l * sv) >> 7;
+            snd_v[2u * i + 1u] += (r * sv) >> 7;
         }
         if (pk > ui_trk_peak[p]) ui_trk_peak[p] = pk;
         }
@@ -912,7 +916,8 @@ static void engine_audio(int32_t *out, uint32_t n)
         snd_c[i] = sat16((clampi(snd_c[i], -262144, 262143) >> 2) * vol_q12 >> 10);
         snd_d[i] = sat16((clampi(snd_d[i], -262144, 262143) >> 2) * vol_q12 >> 10);
         snd_r[i] = sat16((clampi(snd_r[i], -262144, 262143) >> 2) * vol_q12 >> 10);
-        snd_v[i] = sat16((clampi(snd_v[i], -262144, 262143) >> 2) * vol_q12 >> 10);
+        snd_v[2u * i] = sat16((clampi(snd_v[2u * i], -262144, 262143) >> 2) * vol_q12 >> 10);
+        snd_v[2u * i + 1u] = sat16((clampi(snd_v[2u * i + 1u], -262144, 262143) >> 2) * vol_q12 >> 10);
     }
     fx_process(out, snd_c, snd_d, snd_r, n);
     drive_process(out, snd_v, n);
