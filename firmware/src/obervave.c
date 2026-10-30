@@ -905,6 +905,20 @@ static void draw_page(void)
             layer_knob(&k[i], i);
         } else if (seq_shown()) {
             seq_knob(&k[i], i);
+        } else if (page == PG_CHORUS && p == -4) {
+            /* FX order belongs to the song / pattern's SHARED effects,
+             * not to an oscillator patch. Saved in spare DRIVE TYPE bits
+             * to keep original flash settings and snapshots loadable. */
+            static const char *const ROUTE_NAME[OX_FX_ROUTE_COUNT] = {
+                "PARALLEL", "DLY>REV", "REV>DLY"
+            };
+            uint32_t route = opera_x_fx_route(set.dv_type);
+            k[i].label = "FX ROUTE";
+            k[i].present = 1;
+            k[i].v = (int32_t)route;
+            k[i].max = OX_FX_ROUTE_COUNT - 1u;
+            k[i].bip = 0;
+            scat(k[i].value, ROUTE_NAME[route]);
         } else if (page == PG_LFO2 && (p == -2 || p == -3)) {
             /* Two virtual controls stored in spare patch bytes. Their
              * actual 0..127 values are saved with the user's program. */
@@ -2339,7 +2353,11 @@ static void app_main(void)
                 mix_apply(); set_dirty = 1; set_t = fm1_ms;
                 dirty_steps = 1;
             } else if (page == PG_DRIVE && !layer) {   /* (VIBE) TYPE, DRIVE, TONE, MIX */
-                if (k == 0) set.dv_type = (uint8_t)clampi((int32_t)(set.dv_type % NDV) + (e > 0 ? 1 : -1), 0, NDV - 1);
+                if (k == 0) {
+                    uint8_t type = (uint8_t)clampi((int32_t)opera_x_fx_drive_type(set.dv_type)
+                                                   + (e > 0 ? 1 : -1), 0, NDV - 1);
+                    set.dv_type = opera_x_fx_with_drive(set.dv_type, type);
+                }
                 else { uint8_t *v = k == 1 ? &set.dv_amt : k == 2 ? &set.dv_tone : &set.dv_mix; *v = (uint8_t)clampi((int32_t)*v + e * 2, 0, 127); }
                 mix_apply(); set_dirty = 1; set_t = fm1_ms;
             } else if (page == PG_GLOBAL && !layer && !SMK_PAD_HELD) {   /* (a held layer has the knobs, on every page) */
@@ -2365,6 +2383,20 @@ static void app_main(void)
                 layer_used = 1;
                 seq_turn(k, e);
                 dirty_steps = 1;
+            } else if (page == PG_CHORUS && p == -4) {
+                /* The selection is snapshotted together with MIXER and
+                 * effects when a pattern is saved. The drive TYPE knob
+                 * still edits just the bottom two bits. */
+                int32_t previous = opera_x_fx_route(set.dv_type);
+                int32_t next = clampi(previous + (e > 0 ? 1 : -1), 0,
+                                      OX_FX_ROUTE_COUNT - 1);
+                if (next != previous) {
+                    set.dv_type = opera_x_fx_with_route(set.dv_type, (uint8_t)next);
+                    mix_apply();
+                    set_dirty = 1;
+                    set_t = fm1_ms;
+                    dirty_tags = 1;
+                }
             } else if (page == PG_LFO2 && (p == -2 || p == -3)) {
                 patch_t *d = &live_p[seq_trk % NTRK];
                 uint32_t route = p == -2 ? OX_TO_ENV_AMT : OX_TO_MORPH;
