@@ -157,12 +157,69 @@ int main(void)
         assert(sum0 > 1000000 && sum1 > 1000000);
         assert(opera_x_wt_band(0u) == 0u);
         assert(opera_x_wt_band(0xffffffffu) == 4u);
-        assert(opera_x_wt_morph(64u, 32767, 32767, 118u) > 110u);
-        assert(opera_x_wt_morph(64u, -32768, -32768, 118u) < 16u);
+        /* v0.13: independent modulation must not pin MORPH to its edge.
+         * Manual center 64 has controlled +/-43 travel; both endpoints
+         * remain available by turning the knob to 0 or 127. */
+        assert(opera_x_wt_morph(64u, 32767, 32767, 118u) > 100u);
+        assert(opera_x_wt_morph(64u, 32767, 32767, 118u) < 114u);
+        assert(opera_x_wt_morph(64u, -32768, -32768, 118u) > 15u);
+        assert(opera_x_wt_morph(64u, -32768, -32768, 118u) < 28u);
         assert(opera_x_timbre_inc(60u) > opera_x_motion_inc(60u));
         for (j = 0; j < 512u; ++j) {
             int32_t y = opera_x_wt_step(&osc, inc, 80u, 1u, -1);
             assert(y >= -30000 && y <= 30000);
+        }
+    }
+
+    /* v0.13 range regression: NO DEAD ZONES. Each quarter of the physical
+     * MORPH knob contains its own distinct timbral transition. The previous
+     * test checked endpoints only, missing the listener's 15%-only problem.
+     * Test low/mid-band notes in both oscillator families. */
+    {
+        static const uint32_t pitch_inc[3] = {
+            0x01800000u, 0x04000000u, 0x0a000000u
+        };
+        unsigned family, k, start, ph_index;
+        assert(sizeof(opera_x_spectra) == 25700u);
+        for (family = 0u; family < 2u; ++family) {
+            for (k = 0u; k < 3u; ++k) {
+                for (start = 0u; start < 127u; start += 16u) {
+                    unsigned next = start + 16u <= 127u ? start + 16u : 127u;
+                    uint64_t diff = 0;
+                    for (ph_index = 0u; ph_index < 256u; ++ph_index) {
+                        uint32_t phase = ph_index << 24;
+                        int32_t a = opera_x_wt_lookup(phase, pitch_inc[k], start, family);
+                        int32_t b = opera_x_wt_lookup(phase, pitch_inc[k], next, family);
+                        int32_t d = a - b;
+                        diff += d < 0 ? -(int64_t)d : d;
+                    }
+                    assert(diff / 256u > 900u);
+                }
+            }
+        }
+        assert(opera_x_wt_stage(0u) == 0u);
+        assert(opera_x_wt_stage(32u) == 1u);
+        assert(opera_x_wt_stage(64u) == 2u);
+        assert(opera_x_wt_stage(96u) == 3u);
+        assert(opera_x_wt_stage(127u) == 3u);
+        assert(opera_x_wt_blend(0u) == 0u);
+        assert(opera_x_wt_blend(127u) == 128u);
+        /* Test that a FULL MORPH sweep stays monotonic in effective position
+         * during either extreme modulation direction, without clipping
+         * except at the deliberately selected physical endpoints. */
+        for (k = 0u; k < 3u; ++k) {
+            int32_t motion = k == 0u ? -32768 : k == 1u ? 0 : 32767;
+            unsigned previous = 0;
+            for (start = 0u; start <= 127u; ++start) {
+                unsigned p = opera_x_wt_morph((uint8_t)start, motion, motion, 127u);
+                if (start == 0u) assert(p == 0u);
+                else assert(p >= previous);
+                if (start == 127u) assert(p == 127u);
+                if (start > 0u && start < 127u)
+                    assert(p > 0u && p < 127u);
+                if (motion == 0) assert(p == start);
+                previous = p;
+            }
         }
     }
 
@@ -204,6 +261,6 @@ int main(void)
     assert(patch.v[P_MODE] == M_MONO);
     opera_x_factory_patch(&patch, 3u);
     assert(patch.v[P_O1_WAVE] == W_SINE);
-    puts("OPERA X: true spectral/formant morph, stereo, LFO, DRIVE and musical programs pass");
+    puts("OPERA X: full-range five-stage morph, stereo, LFO, DRIVE and musical programs pass");
     return 0;
 }
