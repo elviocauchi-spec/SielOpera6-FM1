@@ -24,6 +24,7 @@ static void app_idle(void);
 #include "obv_x_motion.h"           /* Opera X v0.10: independent tone motion and stereo width */
 #include "obv_x_formants.h"         /* Opera X v0.14: absolute-frequency vowel resonances */
 #include "obv_x_routes.h"           /* Opera X v0.15: editable LFO -> ENV AMT and MORPH */
+#include "obv_x_pwm.h"              /* Opera X v0.17: playable pulse/wide-wave LFO depth */
 #include "obv_x_drive.h"            /* Opera X: correctly staged parallel stereo drive */
 #include "obv_fx.h"
 #include "obv_engine.h"
