@@ -14,6 +14,7 @@
 #include "obv_x_formants.h"
 #include "obv_x_routes.h"
 #include "obv_x_pwm.h"
+#include "obv_x_env_morph.h"
 #include "obv_x_drive.h"
 #include "obv_x_patches.h"
 
@@ -451,6 +452,82 @@ int main(void)
         assert(energy > 100000u);
     }
 
+    /* v0.18: filter-envelope driven wavetable movement must be
+     * independent of PWM, gliding oscillator pitch, and the old bank.
+     * An ENV>O2 setting of 64 must remain neutral for every patch. */
+    {
+        uint8_t pv[PATCH_BYTES] = {0};
+        static const uint8_t phases[5] = {0u, 32u, 64u, 96u, 127u};
+        uint32_t i;
+        uint8_t baseline = 63u;
+        pv[P_O1_WAVE] = W_SPECTRAL;
+        assert(!opera_x_env_morph_enabled(pv));  /* unmarked vintage */
+        pv[OX_MAGIC] = OX_TAG;
+        pv[OX_RATE] = 50u; pv[OX_TONE] = 64u; pv[OX_WIDTH] = 32u;
+        assert(opera_x_env_morph_enabled(pv));
+        pv[P_O1_WAVE] = W_SAW;
+        pv[P_O2_WAVE] = W_SUPERPULSE;
+        assert(!opera_x_env_morph_enabled(pv));
+        pv[P_O2_WAVE] = W_VOX;
+        assert(opera_x_env_morph_enabled(pv));
+        pv[OX_MAGIC] = 0u;
+        assert(!opera_x_env_morph_enabled(pv));
+        assert(opera_x_env_morph_apply(baseline, 0, 127u) == baseline);
+        assert(opera_x_env_morph_apply(baseline, 32768, 64u) == baseline);
+        assert(opera_x_env_morph_apply(baseline, 32768, 127u) == 127u);
+        assert(opera_x_env_morph_apply(baseline, 32768, 0u) == 0u);
+        assert(opera_x_env_morph_apply(baseline, 32768, 100u) > 95u);
+        assert(opera_x_env_morph_apply(baseline, 32768, 24u) < 30u);
+        assert(opera_x_env_morph_apply(127u, 32768, 127u) == 127u);
+        assert(opera_x_env_morph_apply(0u, 32768, 0u) == 0u);
+        for (i = 0; i < 5u; ++i) {
+            uint32_t e = (uint32_t)phases[i] * 32768u / 127u;
+            uint8_t hi = opera_x_env_morph_apply(baseline, (int32_t)e, 100u);
+            uint8_t lo = opera_x_env_morph_apply(baseline, (int32_t)e, 24u);
+            assert(hi >= baseline && hi <= 127u);
+            assert(lo <= baseline);
+            if (i) {
+                uint32_t prev = (uint32_t)phases[i-1u] * 32768u / 127u;
+                assert(hi >= opera_x_env_morph_apply(baseline, (int32_t)prev, 100u));
+                assert(lo <= opera_x_env_morph_apply(baseline, (int32_t)prev, 24u));
+            }
+        }
+    }
+    /* Test that a moving FILTER envelope changes actual spectral output
+     * throughout the note while leaving the oscillator's pitch unchanged.
+     * This is a waveform-level test, not merely a control-value test. */
+    {
+        uint32_t i, ph, inc = 0x01800000u;
+        uint64_t delta_a = 0u, delta_v = 0u;
+        int32_t env_hi = 32768;
+        int32_t env_lo = 0;
+        uint8_t a0 = opera_x_env_morph_apply(63u, env_lo, 100u);
+        uint8_t a1 = opera_x_env_morph_apply(63u, env_hi, 100u);
+        uint8_t v0 = opera_x_env_morph_apply(63u, env_lo, 24u);
+        uint8_t v1 = opera_x_env_morph_apply(63u, env_hi, 24u);
+        for (i = 0; i < 512u; ++i) {
+            ph = i * inc;
+            {
+                int32_t d = opera_x_wt_lookup(ph, inc, a1, 0u)
+                          - opera_x_wt_lookup(ph, inc, a0, 0u);
+                delta_a += d < 0 ? -(int64_t)d : d;
+            }
+            {
+                int32_t d = opera_x_wt_lookup(ph, inc, v1, 1u)
+                          - opera_x_wt_lookup(ph, inc, v0, 1u);
+                delta_v += d < 0 ? -(int64_t)d : d;
+            }
+        }
+        assert(delta_a / 512u > 1500u);
+        assert(delta_v / 512u > 1500u);
+        {
+            uint16_t form1, form2, form1_held, form2_held;
+            opera_x_formant_targets(v0, &form1, &form2);
+            opera_x_formant_targets(v1, &form1_held, &form2_held);
+            assert(form1 != form1_held && form2 != form2_held);
+        }
+    }
+
     /* Each free slot has a meaningful and playable musical sound. */
     for (i = 0; i < 4u; ++i) {
         opera_x_factory_patch(&patch, (uint8_t)i);
@@ -487,6 +564,8 @@ int main(void)
     opera_x_factory_patch(&patch, 0u);
     assert(patch.v[P_O1_WAVE] == W_SPECTRAL);
     assert(patch.v[P_O2_WAVE] == W_SUPERSAW);
+    assert(patch.v[P_ENV_O2] == 100u);
+    assert(opera_x_env_morph_enabled(patch.v));
     assert(patch.v[P_LFO_PWM_TO] == TO_O2 && patch.v[P_LFO_PWM] >= 70u);
     assert(patch.v[P_O2_LVL] >= 60u);
     assert(patch.v[OX_TONE] >= 110u); /* near full-spectrum timbral movement */
@@ -494,6 +573,8 @@ int main(void)
     opera_x_factory_patch(&patch, 1u);
     assert(patch.v[P_O1_WAVE] == W_VOX);
     assert(patch.v[P_O2_WAVE] == W_SUPERPULSE);
+    assert(patch.v[P_ENV_O2] == 24u);
+    assert(opera_x_env_morph_enabled(patch.v));
     assert(patch.v[P_LFO_PWM_TO] == TO_O2 && patch.v[P_LFO_PWM] >= 80u);
     assert(patch.v[P_O2_LVL] >= 55u);
     assert(patch.v[OX_TONE] >= 110u);
@@ -501,6 +582,6 @@ int main(void)
     assert(patch.v[P_MODE] == M_MONO);
     opera_x_factory_patch(&patch, 3u);
     assert(patch.v[P_O1_WAVE] == W_SINE);
-    puts("OPERA X: audible pulse PWM, SUP SAW width, ENV AMT, formants and DRIVE pass");
+    puts("OPERA X: spectral ADSR, stereo PWM, vintage-safe ENV>O2, formants and DRIVE pass");
     return 0;
 }
