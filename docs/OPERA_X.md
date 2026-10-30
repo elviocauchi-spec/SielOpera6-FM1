@@ -274,7 +274,7 @@ v0.13 corrects **both** issues:
 
 - MORPH has **five distinct spectral anchor stages**, occurring at
   display values approximately 0%, 25%, 50%, 75%, and 100%.
-- AURORA: **WARM -> HOLLOW -> RICH -> ETCHED -> AIRY**.
+- AURORA: **WARM -> HOLLOW -> RICH -> ETCHED -> GLASS**.
 - VOXSCAPE: **OO -> OH -> AH -> EH -> EE**.
 - Each adjacent pair changes the harmonic structure, not merely the
   volume or the filter setting. Four interpolated transitions fill
@@ -289,7 +289,9 @@ v0.13 corrects **both** issues:
   LFO can never pin the effective position against the 0 or 127
   limits while the user adjusts MORPH.
 - The host regression scans the waveform at **0, 16, 32, 48, 64,
-  80, 96, 112, 127** for both families and several pitch bands.
+  80, 96, 112, 127** for both families and several pitch bands. It also
+  checks changes after the **actual FM1 12 dB low-pass filter**, so
+  differences hidden by filtering cannot pass merely from waveform math.
   Each neighboring interval must change the generated waveform by
   a measurable amount. It also checks every manual control value
   remains monotonic under full positive and negative modulation.
