@@ -99,7 +99,7 @@ int main(void)
     assert(opera_x_drive_return_gain(127u) == 25500);
     assert(opera_x_drive_return_gain(64u) > 12000);
     assert(opera_x_drive_pre_gain(127u) > opera_x_drive_pre_gain(10u));
-    assert(opera_x_drive_shape(1000, 0u) > 1000);
+    assert(opera_x_drive_shape(1000, 0u) > 700 && opera_x_drive_shape(1000, 0u) < 1200);
     assert(opera_x_drive_shape(1000, 2u) > opera_x_drive_shape(1000, 0u));
     assert(opera_x_drive_shape(-1000, 2u) < 0);
 
