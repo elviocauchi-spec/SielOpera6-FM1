@@ -39,9 +39,14 @@ static inline uint8_t opera_x_env_morph_apply(uint8_t center,
     int32_t scaled, next;
     if (!amount || env_q15 <= 0 || !available) return (uint8_t)c;
     if (env_q15 > 32768) env_q15 = 32768;
-    /* 32768 * 64 * 127 = 266338304: safe within signed int32. */
-    scaled = (env_q15 * (amount < 0 ? -amount : amount) * available
-              + (1 << 20)) >> 21;
+    /* Signed parameter range is -64..+63, so the positive and
+     * negative halves require different normalizers to reach both
+     * endpoints EXACTLY. Products stay below 267 million (int32 safe).
+     * Division is evaluated once per 16-frame control block only. */
+    if (amount > 0)
+        scaled = (env_q15 * amount * available + 63 * 16384) / (63 * 32768);
+    else
+        scaled = (env_q15 * -amount * available + 64 * 16384) >> 21;
     next = c + (amount < 0 ? -scaled : scaled);
     return (uint8_t)(next < 0 ? 0 : next > 127 ? 127 : next);
 }
