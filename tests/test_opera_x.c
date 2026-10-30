@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 #include "obv_dsp.h"
 #include "obv_params.h"
 #include "obv_x_waves.h"
@@ -171,7 +172,7 @@ int main(void)
         for (j = 0; j < NPARAM; ++j)
             assert(patch.v[j] <= PDEF[j].max);
         for (j = 0; j < PATCH_NAME; ++j) {
-            uint8_t want = expected[i][j] ? (uint8_t)expected[i][j] : (uint8_t)' ';
+            uint8_t want = j < strlen(expected[i]) ? (uint8_t)expected[i][j] : (uint8_t)' ';
             assert(patch.v[NPARAM + j] == want);
         }
         assert(patch.v[P_O1_LVL] != 0u || patch.v[P_O2_LVL] != 0u);
