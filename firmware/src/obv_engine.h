@@ -622,7 +622,10 @@ static void block_globals(part_t *g)            /* a sound's derived numbers, on
     g->velflt = pv[P_VEL_FLT];
     d = pv[P_LFO_PITCH]; g->lfo_pd = (d * d) >> 7;
     d = pv[P_LFO_FLT]; g->lfo_fd = (d * d) >> 7;
-    d = pv[P_LFO_PWM]; g->lfo_pwd = (d * d) >> 7;
+    /* The SIEL bank retains the historical squared PWM response. New
+     * Opera X patches use a linear response with audible mid-knob travel. */
+    d = pv[P_LFO_PWM];
+    g->lfo_pwd = opera_x_pwm_depth((uint8_t)d, opera_x_expressive(pv));
     g->lfo_ad = pv[P_LFO_AMP];
     g->wheel_q = pv[P_MOD_DEPTH];               /* the knob and the mod wheel (CC 1) are the same value */
     g->bend8 = (ctl_bend * pv[P_BEND] * 256) >> 13;
@@ -665,7 +668,9 @@ static void block_globals(part_t *g)            /* a sound's derived numbers, on
 
 static inline uint32_t pw_mod(uint32_t base, int32_t mod)
 {
-    int64_t p = (int64_t)base + ((int64_t)mod << 8);
+    /* Signed left-shift on negative PWM modulation is undefined C; use
+     * multiplication so large negative LFO cycles are deterministic. */
+    int64_t p = (int64_t)base + (int64_t)mod * 256;
     if (p < (1 << 26)) p = 1 << 26;
     if (p > (int64_t)0xFFFFFFFFu - (1 << 26)) p = (int64_t)0xFFFFFFFFu - (1 << 26);
     return (uint32_t)p;
@@ -803,6 +808,19 @@ static void voice_render(voice_t *v, int32_t *out)
         width1 = opera_x_animated_detune((uint8_t)width1, g->x_timbre_val, x_depth);
         width2 = opera_x_animated_detune((uint8_t)width2, -g->x_timbre_val, x_depth);
         l2 = opera_x_animated_level(l2, g->x_timbre_val, x_depth);
+    }
+    /* SUP SAW has no literal PWM, but these oscillator states have
+     * independently detuned side voices. On X patches, LFO PWM modifies
+     * the spread of these voices: the center stays in tune, and old
+     * analog or SIEL programs do not change. This is evaluated once
+     * per block, before the side-oscillator phase increments. */
+    if (opera_x_expressive(g->p->v) && g->p->v[P_LFO_PWM]) {
+        uint8_t pwm_depth = g->p->v[P_LFO_PWM];
+        uint32_t target = g->p->v[P_LFO_PWM_TO];
+        if (ww1 == W_SUPERSAW && target != TO_O2)
+            width1 = opera_x_pwm_superwidth(width1, v->x_lfo_value, pwm_depth);
+        if (ww2 == W_SUPERSAW && target != TO_O1)
+            width2 = opera_x_pwm_superwidth(width2, v->x_lfo_value, pwm_depth);
     }
     /* Detune rates are derived once per control block, not per sample.
      * Oscillator PW doubles as wide-wave detune; no extra patch bytes. */
