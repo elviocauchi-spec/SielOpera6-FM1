@@ -27,6 +27,7 @@ static void app_idle(void);
 #include "obv_x_pwm.h"              /* Opera X v0.17: playable pulse/wide-wave LFO depth */
 #include "obv_x_env_morph.h"        /* Opera X v0.18: per-note spectral/vowel ADSR movement */
 #include "obv_x_drive.h"            /* Opera X: correctly staged parallel stereo drive */
+#include "obv_x_fx_routing.h"       /* Opera X v0.19: independent, saved effects order */
 #include "obv_fx.h"
 #include "obv_engine.h"
 #include "obv_seq.h"
