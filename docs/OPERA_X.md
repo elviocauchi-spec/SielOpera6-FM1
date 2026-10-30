@@ -80,3 +80,42 @@ REVERB returns and, if desired, adjust that track's sends.
 Build and tests: `.github/workflows/opera-v08-preview.yml` on branch
 `opera-x-development`; action artifact named
 `OPERA-X-v0.9-SOUND-LAB-PREVIEW`.
+
+## v0.10 expressive-stereo development
+
+**Why:** user listening feedback described v0.9 as "ordinary".
+The v0.9 wide waves were being summed to mono before the filter, so
+there was little sense of width, and their LFO was already busy with
+traditional pitch or PWM modulation.
+
+v0.10 deliberately changes the four **95–98 X patches only**:
+- Two decorrelated detuned side oscillators contribute a separate
+  mid/side stereo component, with a gentle anti-harshness low-pass.
+- A separate, deliberately slow triangle modulation sweeps the filter
+  without occupying the original sound's LFO.
+- The four patches have different depths, widths, oscillator balances,
+  envelope timings, and performance intents.
+- Stereo and modulation settings live in unused patch bytes 74–77
+  behind marker 0xB9; original SIEL programs have no marker and retain
+  their exact v0.9 sound. Original SIEL footage still uses bytes 78–79.
+- The hardware I²S codec and USB path are interleaved left/right.
+  Use headphones or stereo line capture to evaluate the added width;
+  the built-in loudspeaker cannot reproduce stereo separation.
+
+**Limitations:** The global chorus, delay and plate reverb are still
+shared mixer effects and intentionally persist across program changes.
+No X preset silently overwrites the user's global effect settings.
+For spacious pads, turn up the CHORUS and REVERB returns on the FX pages
+and give the playing track appropriate effect sends in MIXER.
+
+**Please compare v0.9 vs v0.10:** 95 CLOUDPAD and 96 SILKSTR are the
+most revealing tests. Hold a chord and listen to the slow changing
+brightness and left/right independence. 97 HOTLEAD should remain
+focused and forward; 98 DEEPBASS is deliberately mostly mono.
+
+**Performance:** at full chord polyphony, active FX and two SUP
+oscillators, check GLOBAL's audio render-time readout. The audio half
+buffer is about 5800us; a prudent release threshold is a worst-case
+peak of <=4000us on real FM1, with further stress testing before we
+raise polyphony. Host unit tests and a successful build do not establish
+hardware CPU margin or guarantee subjective sonic quality.
