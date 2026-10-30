@@ -177,33 +177,38 @@ static inline void rev_tick(int32_t in)
 /* the three effects side by side, each fed by its send bus; out gets their returns, MIX = the return's level.
  * DRIVE, the 4th send: the tracks' drive sends distorted, its return beside the dry sound (parallel: the dry keeps its
  * punch). Types OVERDRIVE (soft), DIST (harder, uneven), FUZZ (square), CRUSH (fewer bits, held samples); TONE a
- * low-pass after it, MIX the return. Fixed point (VIBE's is float): tanh by the softclip table */
+ * low-pass after it, MIX the return. The wet path remains true stereo. */
 enum { DV_OVERDRIVE, DV_DIST, DV_FUZZ, DV_CRUSH, NDV };
 static volatile uint8_t ctl_dv_type, ctl_dv_amt = 60, ctl_dv_tone = 90, ctl_dv_mix = 127;
-static int32_t dv_lp, dv_hold;                  /* Q15 */
+static int32_t dv_lp_l, dv_lp_r, dv_hold_l, dv_hold_r; /* independent stereo drive */
 static uint32_t dv_n;
 static void drive_process(int32_t *out, const int32_t *vs, uint32_t n)
 {
     uint32_t i, ty = ctl_dv_type % NDV, amt = ctl_dv_amt;
-    int32_t pre = 256 + (int32_t)(24u * 256u * amt / 127u);   /* Q8: 1 .. 25 */
-    int32_t k = 1311 + (int32_t)(31457u * ctl_dv_tone * ctl_dv_tone / 16129u);   /* Q15: 0.04 .. 1 */
-    int32_t ret = (int32_t)(ctl_dv_mix * 4000u / 127u);   /* (MIX full: the return about as loud as the dry sound) */
-    if (!ctl_dv_mix) return;
+    int32_t pre = opera_x_drive_pre_gain((uint8_t)amt);
+    int32_t k = 1311 + (int32_t)(31457u * ctl_dv_tone * ctl_dv_tone / 16129u);
+    int32_t ret = opera_x_drive_return_gain(ctl_dv_mix);
+    if (!ctl_dv_mix) { dv_lp_l = dv_lp_r = 0; return; }
     for (i = 0; i < n; i++) {
-        int32_t x = (vs[i] * pre) >> 9, y;      /* softclip(x) = tanh(the drive's x), Q15 */
-        if (ty == DV_OVERDRIVE) y = softclip(x);
-        else if (ty == DV_DIST) y = x > 0 ? softclip(x * 8 / 5) : (softclip(x * 7 / 10) * 4) / 5;
-        else if (ty == DV_FUZZ) y = clampi(x * 40, -32767, 32767);   /* (20 x the drive's x, square beyond 1/20) */
-        else {                                  /* CRUSH: 16 steps, a sample held for 2..12 */
-            if (!dv_n--) { dv_n = 2u + amt * 10u / 127u; dv_hold = softclip(x) * 8 / 32768 * 4096; }
-            y = dv_hold;
+        int32_t xl = (vs[2u * i] * pre) >> 9, xr = (vs[2u * i + 1u] * pre) >> 9;
+        int32_t yl, yr, wl, wr;
+        if (ty == DV_CRUSH) {
+            if (!dv_n) {
+                dv_n = 2u + amt * 10u / 127u;
+                dv_hold_l = softclip(xl) & ~4095;
+                dv_hold_r = softclip(xr) & ~4095;
+            } else --dv_n;
+            yl = dv_hold_l; yr = dv_hold_r;
+        } else {
+            yl = opera_x_drive_shape(xl, ty);
+            yr = opera_x_drive_shape(xr, ty);
         }
-        dv_lp += ((y - dv_lp) * k) >> 15;
-        {
-            int32_t v = (dv_lp * ret + 16384) >> 15;   /* (rounded: the one-pole's -1 it settles on stays silent) */
-            out[2u * i] = sat16(out[2u * i] + v);
-            out[2u * i + 1u] = sat16(out[2u * i + 1u] + v);
-        }
+        dv_lp_l += ((yl - dv_lp_l) * k) >> 15;
+        dv_lp_r += ((yr - dv_lp_r) * k) >> 15;
+        wl = (dv_lp_l * ret + 16384) >> 15;
+        wr = (dv_lp_r * ret + 16384) >> 15;
+        out[2u * i] = sat16(out[2u * i] + wl);
+        out[2u * i + 1u] = sat16(out[2u * i + 1u] + wr);
     }
 }
 
