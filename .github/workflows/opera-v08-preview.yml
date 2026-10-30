@@ -1,7 +1,7 @@
-name: Build Opera X v0.18 musical envelope-to-MORPH firmware
+name: Build Opera X v0.19 configurable effects-order firmware
 on:
   push:
-    branches: [opera-x-v018-env-morph]
+    branches: [opera-x-v019-fx-routing]
     paths:
       - 'firmware/src/siel_factory_*.h'
       - 'firmware/src/obervave.c'
@@ -11,6 +11,7 @@ on:
       - 'firmware/src/obv_params.h'
       - 'firmware/src/obv_x_*.h'
       - 'tests/test_opera_x.c'
+      - 'tests/test_fx_routing.c'
       - 'data/siel_factory_packed.hex'
       - 'tests/test_siel_preview.c'
       - '.github/workflows/opera-v08-preview.yml'
@@ -31,6 +32,10 @@ jobs:
         run: |
           cc -std=c11 -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-const-variable -I firmware/src -I firmware/gen tests/test_opera_x.c -o /tmp/opera_x_test
           /tmp/opera_x_test
+      - name: Verify parallel FX and both wet-cascade directions
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-const-variable -I firmware/src -I firmware/gen tests/test_fx_routing.c -o /tmp/fx_routing_test
+          /tmp/fx_routing_test
       - name: Compile and test ROM storage layout
         run: |
           cc -std=c11 -Wall -Wextra -Werror tests/test_siel_layout.c -o /tmp/siel_layout
@@ -63,12 +68,12 @@ jobs:
             fi
           done
           test -f "$HOME/fw-AC79_AIoT_SDK/cpu/wl82/tools/uboot.boot"
-      - name: Build Opera X v0.18 ENV MORPH FM1 preview
+      - name: Build Opera X v0.19 FX ROUTING FM1 preview
         run: BOARD=fm1 sh build.sh
       - name: Verify firmware
         run: test -s build/obervave.fwsc
       - uses: actions/upload-artifact@v4
         with:
-          name: OPERA-X-v0.18-ENV-MORPH-PREVIEW
+          name: OPERA-X-v0.19-FX-ROUTING-PREVIEW
           path: build/obervave.fwsc
           if-no-files-found: error
