@@ -20,6 +20,18 @@
 #ifndef OBV_X_PWM_H
 #define OBV_X_PWM_H
 
+/* A negative lfo*depth occurs every half-cycle. The old oscillator
+ * used signed << 8, which is undefined in C for negative values.
+ * Equivalent 64-bit multiplication keeps 0..127 SIEL PWM bit-exact. */
+static inline uint32_t opera_x_pwm_phase(uint32_t base, int32_t mod)
+{
+    int64_t p = (int64_t)base + (int64_t)mod * 256;
+    if (p < (1LL << 26)) p = 1LL << 26;
+    if (p > (int64_t)0xFFFFFFFFu - (1LL << 26))
+        p = (int64_t)0xFFFFFFFFu - (1LL << 26);
+    return (uint32_t)p;
+}
+
 static inline uint32_t opera_x_pwm_depth(uint8_t dial, int expressive)
 {
     return expressive ? (uint32_t)dial : ((uint32_t)dial * dial) >> 7;
