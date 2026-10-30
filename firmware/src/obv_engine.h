@@ -112,8 +112,12 @@ typedef struct {
     int32_t cut_sm, reso_sm;                    /* CUTOFF and RESO slewed (Q8), ~25 ms: a CC sweep in semitone steps glides */
     uint32_t pw1_base, pw2_base, w1, w2, ftype, sync_on, xmod_q, glide_k;
 } part_t;
-static part_t pt[NPART] = {{&live_p[0], 0, 0, 0, 0, 60 << 16}, {&live_p[1], 0, 0, 0, 0, 60 << 16},
-                            {&live_p[2], 0, 0, 0, 0, 60 << 16}, {&live_p[3], 0, 0, 0, 0, 60 << 16}};
+static part_t pt[NPART] = {
+    {.p = &live_p[0], .last_pitch16 = 60 << 16},
+    {.p = &live_p[1], .last_pitch16 = 60 << 16},
+    {.p = &live_p[2], .last_pitch16 = 60 << 16},
+    {.p = &live_p[3], .last_pitch16 = 60 << 16}
+};
 
 static void held_remove(uint32_t p, uint32_t note)
 {
