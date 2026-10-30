@@ -82,4 +82,10 @@ static inline int32_t opera_x_animated_level(int32_t base, int32_t motion, uint8
     int32_t delta = (motion * (int32_t)depth) >> 15;
     return (base * (256 + delta)) >> 8;
 }
+/* A chord's notes remain centered. Opera X creates width within each
+ * voice; only other patches retain the original card-position pan scheme. */
+static inline int32_t opera_x_note_pan(const uint8_t *patch, int32_t requested)
+{
+    return opera_x_expressive(patch) && patch[P_MODE] == M_POLY ? 0 : requested;
+}
 #endif /* OBV_X_MOTION_H */
