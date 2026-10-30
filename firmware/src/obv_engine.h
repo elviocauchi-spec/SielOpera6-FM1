@@ -738,8 +738,11 @@ static void voice_block(voice_t *v, uint32_t card)
     v->pw1 = pw_mod(g->pw1_base, pv[P_LFO_PWM_TO] != TO_O2 ? tmp : 0);
     v->pw2 = pw_mod(g->pw2_base, pv[P_LFO_PWM_TO] != TO_O1 ? tmp : 0);
     /* cutoff, Q8 semitones */
-    cut = g->cut_sm + 8 * 256 + ((fenv * opera_x_lfo_env_amount(g->fenv_amt, lfo,
-                               opera_x_route_get(pv, OX_TO_ENV_AMT)) * 390) >> 15)
+    /* ENV AMT is envelope-gated, unlike the direct FILTER LFO. v0.16
+     * emphasizes downward cutoff movement so high-cutoff pads don't
+     * spend half their LFO cycle against an already-open filter ceiling. */
+    cut = g->cut_sm + 8 * 256 + opera_x_env_cutoff_q8(fenv, g->fenv_amt, lfo,
+                                                      opera_x_route_get(pv, OX_TO_ENV_AMT))
         + ((int32_t)v->note - 60) * g->keytrk * 2 + (((int32_t)v->vel - 64) * g->velflt >> 1)
         + ((lfo * g->lfo_fd * 97) >> 15) + ((lfo * g->wheel_q * 48) >> 15) + ((VINT_CUT8[card % NCARD] * vint) >> 7);
     if (opera_x_expressive(pv))
