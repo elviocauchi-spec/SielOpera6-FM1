@@ -52,6 +52,7 @@ static void opera_x_factory_patch(patch_t *p, uint8_t index)
         p->v[P_O2_LVL] = 62u; /* let the modulated stereo layer be heard */
         p->v[P_O2_SEMI] = 24u;
         p->v[P_O2_FINE] = 66u;
+        p->v[P_ENV_O2] = 100u; /* v0.18 OSC MOD ENV>MORPH: bright attack develops */
         p->v[P_CUTOFF] = 88u;     /* v0.16: enough room for envelope-LFO sweeps */
         p->v[P_RESO] = 17u;
         p->v[P_FENV_AMT] = 83u;
@@ -84,6 +85,7 @@ static void opera_x_factory_patch(patch_t *p, uint8_t index)
         p->v[P_O2_LVL] = 60u; /* enough pulse excitation for audible PWM */
         p->v[P_O2_SEMI] = 36u;        /* upper-octave breath/harmonic sheen */
         p->v[P_O2_FINE] = 61u;
+        p->v[P_ENV_O2] = 24u;  /* v0.18 OSC MOD ENV>MORPH: voiced/vowel descent */
         p->v[P_NOISE] = 7u;           /* subtle breath */
         p->v[P_CUTOFF] = 93u;     /* v0.16: keep vowel peaks but avoid open-filter ceiling */
         p->v[P_RESO] = 11u;
