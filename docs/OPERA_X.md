@@ -568,3 +568,85 @@ verify original SIEL squared depth at 43, check safe phase bounds
 and confirm new 95/96 preset routing/level defaults. This verifies
 DSP behavior, but only listening can confirm whether the change is
 satisfying and musical.
+
+## Opera X v0.18 — optional musical ENV > MORPH sound experiment
+
+**Important baseline:** a user listener specifically reported **"v0.17
+sounds good"**. This v0.18 branch is *experimental*; the working v0.17
+release stays untouched and should remain available for A/B comparison.
+Do not merge on the strength of a successful CI run alone.
+
+### New feature: filter envelope animates actual oscillator timbre
+
+Until v0.17, the filter envelope could modulate filter cutoff and OSC2
+pitch, but not the evolving spectral contents. v0.18 repurposes the
+existing **OSC MOD, knob 3**, called ENV>O2 on vintage patches, as
+**ENV>MORPH** *only* when all of these are true:
+
+1. The patch has the Opera X expressive marker.
+2. At least one oscillator uses EVOLVE (spectral) or VOX MORPH wave.
+3. The player moves the bipolar control away from its neutral 64 value.
+
+This provides a useful new ADSR behavior without using another LFO or
+changing the parameter count, patch binary layout or MIDI mapping.
+
+**OSC MOD knob 3 response:**
+- Center **0** (raw value 64): off, exactly the v0.17 sound.
+- Positive **+1..+63**: filter envelope opens the wavetable toward
+  stage 5 (brighter/etching), fully positive means the true end stage.
+- Negative **-1..-64**: envelope moves toward stage 1 (darker/hollow),
+  fully negative means the true start stage.
+- Long attack gives a time-dependent evolution from the manual MORPH
+  knob position. Sustain holds a partial amount, and release gradually
+  returns toward the manual position. Adjust the existing FILTER ENV
+  ADSR page to control the speed and shape of this spectral movement.
+- The separate editable **LFO+ MORPH** remains available and is applied
+  before this ADSR movement. Manual OSC1 or OSC2 MORPH is always the
+  baseline when the filter envelope is zero.
+
+**Voxscape:** for the VOX wavetable, the two true absolute-frequency
+vowel formant peaks follow the *identical* per-voice final morph
+position, not just the wavetable's harmonics. This avoids conflicting
+movements that sound unlike actual formants.
+
+**Compatibility and performance:** the original 00–94 SIEL programs,
+all conventional waves, the previous PWM/WID improvements, stereo,
+DRIVE, user programs and saved patch layout remain untouched. When the
+X patch uses the new mode, the old OSC2 pitch-envelope destination is
+suppressed, avoiding unintentionally playing an out-of-tune upper
+oscillator. There are no extra per-sample DSP operations; calculations
+are per active voice on the existing 16-frame control block. Voxscape
+already used formant coefficients per note due to LFO+ MORPH, so the
+new envelope behavior reuses that same filter-coefficient route.
+
+Factory test programs:
+- **95 X AURORA** defaults OSC MOD **ENV>MORPH = +36** (raw 100):
+  a warm pad that brightens during its filter-envelope attack.
+- **96 X VOXSCAPE** defaults **ENV>MORPH = -40** (raw 24):
+  a contrasting vowel that darkens/hollows out through its envelope.
+- **97 X HOTLEAD** and **98 X DEEPBASS** remain the existing
+  conventional-wave sounds, retaining OSC MOD ENV>O2 behavior.
+
+### Listening A/B
+
+1. First, keep v0.17 firmware as the known-good reference.
+2. On v0.18, load the **unsaved ROM** version of preset 95; saved user
+   copies take precedence. Turn FX returns down temporarily.
+3. Navigate OSC MOD and sweep **ENV>MORPH** from center (off) to +50
+   while playing single notes with long filter attack, then negative
+   values. You should hear a new per-note timbral trajectory independent
+   of the autonomous LFO. Compare with v0.17.
+4. On 96, use long filter envelope release while playing mid-register
+   notes. Expect evolving vowel positions during the attack AND during
+   key release; the sustained amplitude level still follows AMP ENV.
+5. Check GLOBAL audio render time with six-note chords, chorus, reverb
+   and DRIVE enabled. Earlier user reports (online emulator) were
+   around 2500/2570/3200 microseconds for previous versions. The
+   audio half-buffer deadline is about 5800 us, and our target remains
+   approximately 4000 us peak under stress *on actual FM1 hardware*.
+
+Software regression checks include exact endpoint reachability,
+zero-envelope bypass, neutral route bypass, monotonically increasing
+ADSR positions, 95/96 factory defaults, unmarked SIEL bypass, waveform
+difference and correlated VOX formant movement. Actual listening and
+physical hardware CPU performance remain unverified.
