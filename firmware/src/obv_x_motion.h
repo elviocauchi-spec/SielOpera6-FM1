@@ -75,13 +75,21 @@ static inline int32_t opera_x_timbre_motion(uint32_t independent_phase)
 {
     return opera_x_motion(independent_phase + 0x60000000u);
 }
-/* Oscillator PW knob remains manually useful as base spectral morph;
- * the independent timbre source sweeps it while the slow filter LFO
- * prevents too-regular a repetitive triangle sweep. */
+/* Manual MORPH must remain useful across all 0..127, even while a
+ * strong LFO is moving the waveform. The previous centered +/-depth/2
+ * modulation pushed lower and upper settings against hard 0/127 clamps,
+ * making large regions of knob travel insensitive.
+ *
+ * Here motion is a controlled fraction of the available headroom around
+ * the *manually chosen* center. The knob always reaches both exact end
+ * spectra; modulation goes gracefully to zero at the extremes.
+ * Evaluated per 16-frame control block, not per audio sample. */
 static inline uint8_t opera_x_wt_morph(uint8_t base, int32_t timbre, int32_t slow, uint8_t depth)
 {
-    int32_t mod = (timbre * 3 + slow) >> 2;
-    int32_t value = (int32_t)base + ((mod * (int32_t)depth) >> 16);
+    int32_t movement = (timbre * 3 + slow) >> 2;  /* -32768..32767 */
+    int32_t room = base < 127u - base ? base : 127u - base;
+    int32_t span = (room * depth * 3) / (127 * 4); /* <=75% of headroom */
+    int32_t value = (int32_t)base + ((movement * span) >> 15);
     return (uint8_t)(value < 0 ? 0 : value > 127 ? 127 : value);
 }
 /* Detune width changes by up to +/-depth/4, never leaving 0..127. */
