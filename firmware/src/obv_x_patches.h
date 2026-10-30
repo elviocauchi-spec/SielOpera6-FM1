@@ -168,6 +168,9 @@ static void opera_x_factory_patch(patch_t *p, uint8_t index)
         static const uint8_t morph_depth[4] = {66u, 78u, 0u, 0u};
         opera_x_route_set(p->v, OX_TO_ENV_AMT, fenv_depth[index]);
         opera_x_route_set(p->v, OX_TO_MORPH, morph_depth[index]);
+        /* Explicit v0.18 factory opt-in; users' saved v0.17 patches
+         * retain ENV>O2 pitch behavior until the player edits it. */
+        if (index < 2u) p->v[OX_ROUTE_TAG_AT] = OX_ENV_MORPH_TAG;
     }
     for (i = 0u; i < PATCH_NAME && names[index][i]; ++i)
         p->v[NPARAM + i] = (uint8_t)names[index][i];
