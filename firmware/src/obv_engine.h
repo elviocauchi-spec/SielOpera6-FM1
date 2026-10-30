@@ -27,6 +27,8 @@ typedef struct {
     svf_state_t f1, f2;
     svf_coef_t c1, c2;
     svf_state_t vox_f1, vox_f2;        /* Opera X: 2 formants per voice, VOX only */
+    svf_coef_t vox_lfo_c1, vox_lfo_c2;/* per-voice vowel positions when main LFO routes to MORPH */
+    int32_t x_lfo_value;              /* this voice's delayed/spread LFO, Q15 */
     uint32_t inc1, inc2, pw1, pw2;              /* this block's oscillator settings */
     int32_t amp0, amp1;                         /* Q15 at the block's start and end */
     int32_t pitch16, target16;                  /* Q16 semitones: the glide */
@@ -168,6 +170,7 @@ static void voice_start(voice_t *v, uint32_t part, uint32_t note, uint32_t vel, 
      * inherit the previous voice's resonant filter memory. */
     v->vox_f1.ic1 = v->vox_f1.ic2 = 0;
     v->vox_f2.ic1 = v->vox_f2.ic2 = 0;
+    v->x_lfo_value = 0;
     /* The original POLY engine spreads each physical voice card across
      * different pan positions. That made a chord sound like unrelated notes
      * jumping left and right. X patches keep every note centered and make
@@ -697,6 +700,15 @@ static void voice_block(voice_t *v, uint32_t card)
         v->lfo_blk++;
     }
     lfo = (lfo * v->lfo_fade) >> 15;
+    v->x_lfo_value = lfo; /* same LFO phase, delay and fade for all new routes */
+    /* With LFO -> MORPH enabled, a VOX note needs its own two formant
+     * coefficients: main LFO phase may be spread and fade per voice.
+     * Coefficients are calculated once per 16 samples, never per sample. */
+    if (g->vox_active && opera_x_route_get(pv, OX_TO_MORPH)) {
+        uint8_t m = opera_x_vox_position(pv, g->x_timbre_val, g->x_motion_val);
+        m = opera_x_lfo_morph(m, lfo, opera_x_route_get(pv, OX_TO_MORPH));
+        opera_x_formant_coeffs(m, &v->vox_lfo_c1, &v->vox_lfo_c2);
+    }
     /* vintage: a slow random walk on the pitch */
     v->drift += (int32_t)(xorshift(&v->noise) & 31u) - 16;
     v->drift -= v->drift >> 11;
@@ -726,7 +738,8 @@ static void voice_block(voice_t *v, uint32_t card)
     v->pw1 = pw_mod(g->pw1_base, pv[P_LFO_PWM_TO] != TO_O2 ? tmp : 0);
     v->pw2 = pw_mod(g->pw2_base, pv[P_LFO_PWM_TO] != TO_O1 ? tmp : 0);
     /* cutoff, Q8 semitones */
-    cut = g->cut_sm + 8 * 256 + ((fenv * g->fenv_amt * 390) >> 15)
+    cut = g->cut_sm + 8 * 256 + ((fenv * opera_x_lfo_env_amount(g->fenv_amt, lfo,
+                               opera_x_route_get(pv, OX_TO_ENV_AMT)) * 390) >> 15)
         + ((int32_t)v->note - 60) * g->keytrk * 2 + (((int32_t)v->vel - 64) * g->velflt >> 1)
         + ((lfo * g->lfo_fd * 97) >> 15) + ((lfo * g->wheel_q * 48) >> 15) + ((VINT_CUT8[card % NCARD] * vint) >> 7);
     if (opera_x_expressive(pv))
@@ -763,6 +776,17 @@ static void voice_render(voice_t *v, int32_t *out)
                                       g->x_motion_val, x_depth);
     uint8_t morph2 = opera_x_wt_morph((uint8_t)width2, -g->x_timbre_val,
                                       g->x_motion_val, x_depth);
+    {
+        uint8_t morph_route = opera_x_route_get(g->p->v, OX_TO_MORPH);
+        if (morph_route) {
+            /* The editable LFO adds extra spectral movement around the
+             * existing automatic evolution. No extra audio-rate work. */
+            if (ww1 == W_SPECTRAL || ww1 == W_VOX)
+                morph1 = opera_x_lfo_morph(morph1, v->x_lfo_value, morph_route);
+            if (ww2 == W_SPECTRAL || ww2 == W_VOX)
+                morph2 = opera_x_lfo_morph(morph2, v->x_lfo_value, morph_route);
+        }
+    }
     if (x_depth) {
         /* Two independently phased motions: filter opens over several
          * seconds while detune width and the harmonic layer move faster.
@@ -831,9 +855,15 @@ static void voice_render(voice_t *v, int32_t *out)
         }
         }
         y = clampi(y, -65000, 65000);
-        if (g->vox_active)
-            y = opera_x_formant_render(y, &g->vox_c1, &g->vox_c2,
-                                      &v->vox_f1, &v->vox_f2);
+        if (g->vox_active) {
+            /* If routed, the changing wavetables and the actual vowel
+             * formant frequencies must follow the SAME LFO phase. */
+            int32_t per_voice = opera_x_route_get(g->p->v, OX_TO_MORPH) != 0u;
+            y = opera_x_formant_render(y,
+                        per_voice ? &v->vox_lfo_c1 : &g->vox_c1,
+                        per_voice ? &v->vox_lfo_c2 : &g->vox_c2,
+                        &v->vox_f1, &v->vox_f2);
+        }
         amp = amp0 + ((da * (int32_t)i) >> 4);
         y = (y * amp) >> 16;
         if (x_wide_gain && ((ww1 == W_SUPERSAW || ww1 == W_SUPERPULSE) ||
