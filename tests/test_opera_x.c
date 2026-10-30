@@ -11,6 +11,8 @@
 #include "obv_x_waves.h"
 #include "obv_x_tables.h"
 #include "obv_x_motion.h"
+#include "obv_x_formants.h"
+#include "obv_x_routes.h"
 #include "obv_x_drive.h"
 #include "obv_x_patches.h"
 
@@ -253,6 +255,85 @@ int main(void)
         }
     }
 
+    /* v0.15: the two new editable routes must never collide with the
+     * original name, factory ROM, or oscillator footage trailer. */
+    {
+        patch_t original, x;
+        uint32_t j;
+        patch_defaults(&original);
+        original.v[PATCH_BYTES - 2u] = 0xA6u;
+        original.v[PATCH_BYTES - 1u] = 3u;
+        for (j = 0u; j < PATCH_NAME; ++j)
+            original.v[NPARAM + j] = (uint8_t)("SIEL PATCH"[j]);
+        assert(opera_x_route_get(original.v, OX_TO_ENV_AMT) == 0u);
+        assert(opera_x_route_get(original.v, OX_TO_MORPH) == 0u);
+        opera_x_route_set(original.v, OX_TO_ENV_AMT, 100u);
+        opera_x_route_set(original.v, OX_TO_MORPH, 72u);
+        assert(original.v[PATCH_BYTES - 2u] == 0xA6u);
+        assert(original.v[PATCH_BYTES - 1u] == 3u);
+        assert(opera_x_route_get(original.v, OX_TO_ENV_AMT) == 100u);
+        assert(opera_x_route_get(original.v, OX_TO_MORPH) == 72u);
+        for (j = 0u; j < PATCH_NAME; ++j)
+            assert(original.v[NPARAM + j] == (uint8_t)("SIEL PATCH"[j]));
+
+        patch_defaults(&x);
+        x.v[OX_MAGIC] = OX_TAG;
+        x.v[OX_RATE] = 55u; x.v[OX_TONE] = 85u; x.v[OX_WIDTH] = 62u;
+        assert(opera_x_expressive(x.v));
+        assert(opera_x_route_get(x.v, OX_TO_MORPH) == 0u);
+        opera_x_route_set(x.v, OX_TO_ENV_AMT, 64u);
+        opera_x_route_set(x.v, OX_TO_MORPH, 127u);
+        assert(opera_x_route_get(x.v, OX_TO_ENV_AMT) == 64u);
+        assert(opera_x_route_get(x.v, OX_TO_MORPH) == 127u);
+        assert(opera_x_expressive(x.v)); /* v0.10 stereo/motion stays intact */
+        assert(x.v[OX_RATE] == 55u && x.v[OX_TONE] == 85u && x.v[OX_WIDTH] == 62u);
+        assert(x.v[PATCH_BYTES - 2u] == 64u && x.v[PATCH_BYTES - 1u] == 127u);
+        assert(opera_x_lfo_env_amount(30, 0, 127u) == 30);
+        assert(opera_x_lfo_env_amount(30, 32767, 0u) == 30);
+        assert(opera_x_lfo_env_amount(30, 32767, 127u) > 50);
+        assert(opera_x_lfo_env_amount(30, -32768, 127u) < 10);
+        assert(opera_x_lfo_env_amount(63, 32767, 127u) == 63);
+        assert(opera_x_lfo_env_amount(-64, -32768, 127u) == -64);
+        assert(opera_x_lfo_morph(64u, 0, 127u) == 64u);
+        assert(opera_x_lfo_morph(64u, 32767, 0u) == 64u);
+        assert(opera_x_lfo_morph(64u, 32767, 127u) > 110u);
+        assert(opera_x_lfo_morph(64u, -32768, 127u) < 15u);
+        assert(opera_x_lfo_morph(0u, 32767, 127u) == 0u);
+        assert(opera_x_lfo_morph(127u, -32768, 127u) == 127u);
+        for (j = 0; j < 127u; ++j) {
+            int32_t pos = opera_x_lfo_morph((uint8_t)j, 32767, 95u);
+            assert(pos >= (int32_t)j && pos <= 127);
+        }
+    }
+
+    /* v0.14: vowel resonances are specified at absolute Hz, not indexed
+     * by MIDI note/octave; verify distinct and ordered interpolated peaks. */
+    {
+        unsigned j;
+        svf_coef_t c1, c2;
+        svf_state_t s1 = {0}, s2 = {0};
+        int64_t energy = 0;
+        const uint8_t centers[5] = {0u, 32u, 64u, 96u, 127u};
+        const uint16_t *f1 = opera_x_vox_f1_q8, *f2 = opera_x_vox_f2_q8;
+        for (j = 0u; j < 5u; ++j) {
+            uint16_t a, b;
+            opera_x_formant_targets(centers[j], &a, &b);
+            assert(a == f1[j] && b == f2[j]);
+            assert(a > 13000u && a < b && b < 30000u);
+            opera_x_formant_coeffs(centers[j], &c1, &c2);
+            assert(c1.a1 > 0 && c2.a1 > 0);
+        }
+        opera_x_formant_coeffs(64u, &c1, &c2);
+        for (j = 0u; j < 2048u; ++j) {
+            uint32_t ph = j * 0x02000000u;
+            int32_t wave = opera_x_wt_lookup(ph, 0x02000000u, 64u, 1u);
+            int32_t y = opera_x_formant_render(wave, &c1, &c2, &s1, &s2);
+            assert(y >= -65000 && y <= 65000);
+            energy += y < 0 ? -(int64_t)y : y;
+        }
+        assert(energy > 100000u);
+    }
+
     /* Each free slot has a meaningful and playable musical sound. */
     for (i = 0; i < 4u; ++i) {
         opera_x_factory_patch(&patch, (uint8_t)i);
@@ -269,6 +350,14 @@ int main(void)
         assert(patch.v[OX_RATE] <= 127u);
         assert(patch.v[OX_MAGIC] == OX_TAG);
         assert(opera_x_factory_drive_send((uint8_t)i) > 0u);
+        assert(patch.v[OX_ROUTE_TAG_AT] == OX_ROUTE_TAG);
+        assert(patch.v[OX_MAGIC] == OX_TAG); /* no metadata alias */
+        if (i < 2u) {
+            assert(opera_x_route_get(patch.v, OX_TO_ENV_AMT) >= 25u);
+            assert(opera_x_route_get(patch.v, OX_TO_MORPH) >= 60u);
+        } else {
+            assert(opera_x_route_get(patch.v, OX_TO_MORPH) == 0u);
+        }
         if (i < 2u) {
             assert(opera_x_note_pan(patch.v, -60) == 0);
             assert(opera_x_note_pan(patch.v, 40) == 0);
@@ -291,6 +380,6 @@ int main(void)
     assert(patch.v[P_MODE] == M_MONO);
     opera_x_factory_patch(&patch, 3u);
     assert(patch.v[P_O1_WAVE] == W_SINE);
-    puts("OPERA X: full-range five-stage morph, stereo, LFO, DRIVE and musical programs pass");
+    puts("OPERA X: dual LFO routes, formant vowels, preserved footage, full-range MORPH and DRIVE pass");
     return 0;
 }
