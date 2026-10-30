@@ -257,3 +257,65 @@ audio half-buffer deadline is roughly 5800 microseconds. Aim for
 <=4000 microseconds peak under stress. A successful firmware build
 and waveform assertions do not establish beautiful sound by ear,
 performance headroom or alias-free operation over all notes.
+
+## v0.13 FULL-RANGE MORPH — correction of the 0–15% useful-range defect
+
+User listening reports: AURORA's MORPH audibly changed mostly between
+0 and about 15% of the knob; VOXSCAPE had only slightly more useful
+travel. That is a failure of the instrument's expressiveness, even
+though the v0.12 numerical endpoint tests passed.
+
+v0.12 only interpolated between **two endpoints**. A linear waveform
+interpolation does not guarantee perceptually uniform sonic changes.
+Furthermore, the separate morph LFO applied up to +/-depth/2 to the
+manual center, clipping at 0 and 127 for much of its movement.
+
+v0.13 corrects **both** issues:
+
+- MORPH has **five distinct spectral anchor stages**, occurring at
+  display values approximately 0%, 25%, 50%, 75%, and 100%.
+- AURORA: **WARM -> HOLLOW -> RICH -> ETCHED -> AIRY**.
+- VOXSCAPE: **OO -> OH -> AH -> EH -> EE**.
+- Each adjacent pair changes the harmonic structure, not merely the
+  volume or the filter setting. Four interpolated transitions fill
+  all of the physical 0–127 knob range.
+- Five harmonic-cap tables per stage select an alias-reducing spectrum
+  based on oscillator pitch, as before. The ROM table occupies
+  **25,700 static bytes**, versus v0.12's 10,280 bytes. There is
+  **no additional audio-rate oscillator, sample-rate conversion, or
+  dynamically allocated RAM**.
+- The independent morph LFO now always centers on the manual knob.
+  Its maximum swing is limited by the nearest endpoint; the automatic
+  LFO can never pin the effective position against the 0 or 127
+  limits while the user adjusts MORPH.
+- The host regression scans the waveform at **0, 16, 32, 48, 64,
+  80, 96, 112, 127** for both families and several pitch bands.
+  Each neighboring interval must change the generated waveform by
+  a measurable amount. It also checks every manual control value
+  remains monotonic under full positive and negative modulation.
+- DRIVE's fix, six-voice structure, stereo chord imaging, original
+  SIEL presets 00–94 and the other Opera X sounds are unchanged.
+
+### Listening check
+
+For a controlled A/B, **turn down chorus, reverb, and DRIVE returns**,
+hold a single mid-register note, and sweep OSC 1 MORPH slowly
+through 0%, 25%, 50%, 75%, and 100%. The actual oscillator tone
+should evolve through **four clear steps of character**, not just
+change at the beginning. Repeat with 96 VOXSCAPE.
+
+Then restore your usual effects and hold a chord for at least 8
+seconds. The separate LFOs should add slower motion around the
+selected character; adjusting MORPH must remain expressive.
+
+One user-reported GLOBAL figure for v0.12 was approximately
+**2500 us on the online emulator** (about 43% of a 5800-us
+half-buffer budget). That is encouraging but was not a controlled
+worst-case hardware measurement. v0.13 adds 15,420 ROM bytes and
+a small amount of waveform-selection work. Recheck GLOBAL under
+maximum six-voice load and effects before considering this safe for
+physical FM1 performance. Our desired worst-case CPU target on
+hardware remains around <=4000us peak.
+
+Neither waveform-distance regression nor a clean build guarantees
+subjectively even morphing; user listening is decisive.
