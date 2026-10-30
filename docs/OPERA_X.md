@@ -405,3 +405,85 @@ panel and persist with SAVE; they are **not yet assignable as separate
 MIDI CC parameters or sequencer automation lanes**. The original
 parameter indices, MIDI CC mappings and factory SIEL conversion
 remain intact.
+
+## Opera X v0.16 — ENV AMT now has a meaningful sweep
+
+**User feedback:** with v0.15 the new LFO -> ENV AMT modulation was
+underwhelming, although GLOBAL displayed about **3200 us** on the
+online emulator (previous v0.13 reported 2570 us). The latter is
+about **55%** of our roughly 5800-us render deadline, but it is not
+a hardware worst-case test and must not be interpreted as spare
+polyphony without further measurement.
+
+### Why it sounded weak
+
+Aurora's factory FILTER CUTOFF was 101 and its ENV AMT was +19
+(control value 83, offset from the bipolar center at 64).
+The sustained filter envelope added roughly 23 semitones of cutoff,
+bringing its operating position to around MIDI 132 after the engine's
+additional +8-semitone offset, close to its 136-semitone coefficient
+ceiling. Turning ENV AMT's LFO depth upward therefore spent much of
+the cycle making an already-open filter even more open.
+Voxscape had a similar problem with an initial cutoff of 110.
+
+This is an interaction of envelope sustain, ENV AMT, filter cutoff
+and coefficient ceiling, not a failure of the encoder or the LFO
+signal itself.
+
+### What was changed
+
+- Aurora's FILTER CUTOFF defaults to **88**, Voxscape to **93**.
+  This gives both pads enough brightness to remain recognizable,
+  but room to move in both directions.
+- The LFO+ **ENV AMT** destination remains labeled the same and is
+  still a saved patch parameter 0..127 (0–100% display).
+- Its response is now *musically asymmetric*: at maximum depth the
+  LFO's positive peak adds up to **+12** ENV AMT units; the negative
+  peak subtracts up to **56**. This deliberately favors a deep,
+  breathing downward sweep over an upper-frequency peak that would
+  otherwise hit the filter's cutoff ceiling.
+- Crucially, **LFO = 0 means no change**. So note-on and LFO-delay
+  stages never receive an unintended baseline cutoff shift; route
+  depth zero is exactly compatible with the original filter equation.
+- The modulation is *envelope gated*. When the filter envelope is
+  zero it does nothing; this is not equivalent to LFO DEST FILTER
+  (which moves cutoff directly). Raising the filter ENV sustain or
+  changing its attack/decay alters the effect dramatically.
+- Aurora's default route ENV AMT was raised 44 -> **63**;
+  Voxscape's 30 -> **52**. The lead and bass settings remain.
+- No additional DSP is run per audio sample: fixed-point multiplications
+  and shifts are performed once per active voice/control block.
+- New host regression tests simulate held sustained envelopes for both
+  factory pads and confirm large cutoff movement after the actual
+  12 dB filter, instead of testing only abstract depth values.
+
+### Listening test
+
+1. Load unsaved factory **95 X AURORA**. Open LFO+ (press LFO three
+   times) and set **ENV AMT to zero**. Hold a chord for at least 5 s.
+2. Turn ENV AMT through **30%, 60%, 100%**, without changing the master
+   level. Listen for a more dramatic dark/bright breathing quality.
+3. Make the modulation especially obvious: on the first LFO page,
+   change SHAPE to **SQUARE** and RATE to around the middle. With
+   ENV AMT at 70–100%, the tone should alternate between a bright,
+   full envelope and a darker, weakened/inverted envelope.
+4. Repeat on **96 X VOXSCAPE**. The formant resonances follow its
+   separate editable MORPH destination; ENV AMT moves the ordinary
+   synth filter, which can dramatically darken the vowel excitation.
+5. Compare LFO DEST **FILTER**: this direct cutoff motion still works
+   even with FILTER ENV sustain set to zero, whereas LFO+ ENV AMT does
+   not. That's how to verify the two destinations are genuinely
+   different.
+6. Check GLOBAL under your actual six-voice/FX stress case. Target
+   <=4000 us peak with a 5800-us budget; a single 3200-us reading
+   doesn't establish safe margin on physical FM1 hardware.
+
+### Compatibility
+
+Original Opera 6 patches 00–94, their waveform/footage data, factory
+names, saved program format, editable LFO+ route storage, the new
+absolute-frequency vocal formant filter, MORPH and the working DRIVE
+send/return are unchanged. Any saved user patch takes priority over
+new ROM factory defaults 95 and 96. If you previously saved 95/96,
+you can still raise ENV AMT manually, but the new factory cutoff
+values will not be forced onto your custom patches.
