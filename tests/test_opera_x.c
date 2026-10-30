@@ -13,6 +13,7 @@
 #include "obv_x_motion.h"
 #include "obv_x_formants.h"
 #include "obv_x_routes.h"
+#include "obv_x_pwm.h"
 #include "obv_x_drive.h"
 #include "obv_x_patches.h"
 
@@ -69,6 +70,69 @@ int main(void)
     assert(test_osc(W_TRI) > 1000000);
     assert(test_osc(W_SUPERSAW) > 1000000);
     assert(test_osc(W_SUPERPULSE) > 1000000);
+
+    /* v0.17: LFO PWM is usable at mid-knob settings, not barely audible.
+     * Legacy patches MUST retain the exact old squared depth response. */
+    assert(opera_x_pwm_depth(0u, 1) == 0u);
+    assert(opera_x_pwm_depth(127u, 1) == 127u);
+    assert(opera_x_pwm_depth(43u, 0) == 14u);
+    assert(opera_x_pwm_depth(43u, 1) == 43u);
+    assert(opera_x_pwm_depth(83u, 1) == 83u);
+    assert(opera_x_pwm_is_pulse(W_PLS));
+    assert(opera_x_pwm_is_pulse(W_BOTH));
+    assert(opera_x_pwm_is_pulse(W_SUPERPULSE));
+    assert(!opera_x_pwm_is_pulse(W_SUPERSAW));
+    assert(!opera_x_pwm_is_pulse(W_VOX));
+    assert(opera_x_pwm_is_wide_saw(W_SUPERSAW));
+    assert(!opera_x_pwm_is_wide_saw(W_SAW));
+    assert(opera_x_pwm_superwidth(44u, 0, 127u) == 44u);
+    assert(opera_x_pwm_superwidth(44u, 32767, 0u) == 44u);
+    assert(opera_x_pwm_superwidth(44u, -32768, 74u) < 28u);
+    assert(opera_x_pwm_superwidth(44u, 32767, 74u) > 85u);
+    assert(opera_x_pwm_superwidth(0u, -32768, 127u) == 0u);
+    assert(opera_x_pwm_superwidth(127u, 32767, 127u) == 127u);
+    {
+        /* The actual BLEP PULSE output must differ at opposite LFO
+         * peaks. This is more meaningful than asserting a knob changes. */
+        osc_t lower = {0}, upper = {0};
+        uint32_t base = (58u << 25) + (1u << 24);
+        uint32_t pwm_low = opera_x_pwm_phase(base, -32768 * 83);
+        uint32_t pwm_high = opera_x_pwm_phase(base, 32767 * 83);
+        uint32_t inc = 0x02000000u, i;
+        uint64_t spectral_difference = 0u;
+        assert(pwm_low < base && pwm_high > base);
+        for (i = 0u; i < 4096u; ++i) {
+            int32_t a = osc_step(&lower, inc, inc >> 15, pwm_low, OSC_PLS, -65536, -1);
+            int32_t b = osc_step(&upper, inc, inc >> 15, pwm_high, OSC_PLS, -65536, -1);
+            int32_t d = a - b;
+            spectral_difference += d < 0 ? -(int64_t)d : (int64_t)d;
+        }
+        assert(spectral_difference / 4096u > 1200u);
+    }
+    {
+        /* AURORA's SUP SAW now changes detune width with the very
+         * same LFO PWM control. The center oscillator stays in tune. */
+        osc_t main_a = {0}, l_a = {0}, r_a = {0};
+        osc_t main_b = {0}, l_b = {0}, r_b = {0};
+        uint32_t inc = 0x02000000u, lo_a, hi_a, lo_b, hi_b, i;
+        uint32_t width_a = opera_x_pwm_superwidth(44u, -32768, 74u);
+        uint32_t width_b = opera_x_pwm_superwidth(44u, 32767, 74u);
+        uint64_t spectral_difference = 0u;
+        opera_x_init_aux(&l_a, &r_a, 0u);
+        opera_x_init_aux(&l_b, &r_b, 0u);
+        opera_x_detuned_incs(inc, width_a, &lo_a, &hi_a);
+        opera_x_detuned_incs(inc, width_b, &lo_b, &hi_b);
+        assert(lo_a > lo_b && hi_a < hi_b);
+        for (i = 0u; i < 6144u; ++i) {
+            int32_t a = opera_x_osc_sample(&main_a, &l_a, &r_a,
+                                           inc, lo_a, hi_a, 0x80000000u, W_SUPERSAW, -1);
+            int32_t b = opera_x_osc_sample(&main_b, &l_b, &r_b,
+                                           inc, lo_b, hi_b, 0x80000000u, W_SUPERSAW, -1);
+            int32_t d = a - b;
+            spectral_difference += d < 0 ? -(int64_t)d : (int64_t)d;
+        }
+        assert(spectral_difference / 6144u > 400u);
+    }
 
     /* v0.10: independent slow filter motion is bounded, bipolar and not
      * confused with the legacy patch LFO controls. */
@@ -423,16 +487,20 @@ int main(void)
     opera_x_factory_patch(&patch, 0u);
     assert(patch.v[P_O1_WAVE] == W_SPECTRAL);
     assert(patch.v[P_O2_WAVE] == W_SUPERSAW);
+    assert(patch.v[P_LFO_PWM_TO] == TO_O2 && patch.v[P_LFO_PWM] >= 70u);
+    assert(patch.v[P_O2_LVL] >= 60u);
     assert(patch.v[OX_TONE] >= 110u); /* near full-spectrum timbral movement */
     assert(patch.v[P_O1_PW] > 0u && patch.v[P_O1_PW] < 127u); /* editable MORPH */
     opera_x_factory_patch(&patch, 1u);
     assert(patch.v[P_O1_WAVE] == W_VOX);
     assert(patch.v[P_O2_WAVE] == W_SUPERPULSE);
+    assert(patch.v[P_LFO_PWM_TO] == TO_O2 && patch.v[P_LFO_PWM] >= 80u);
+    assert(patch.v[P_O2_LVL] >= 55u);
     assert(patch.v[OX_TONE] >= 110u);
     opera_x_factory_patch(&patch, 2u);
     assert(patch.v[P_MODE] == M_MONO);
     opera_x_factory_patch(&patch, 3u);
     assert(patch.v[P_O1_WAVE] == W_SINE);
-    puts("OPERA X: audible ENV AMT, dual LFO routes, formants, preserved footage and DRIVE pass");
+    puts("OPERA X: audible pulse PWM, SUP SAW width, ENV AMT, formants and DRIVE pass");
     return 0;
 }
