@@ -156,6 +156,15 @@ static void opera_x_factory_patch(patch_t *p, uint8_t index)
         p->v[OX_WIDTH] = 18u; /* keep deep bass predominantly mono */
         break;
     }
+    /* The new LFO routes are opt-in and stored without moving the
+     * 10-character name or any vintage parameter. Bass stays essentially
+     * fixed; the evolving pads demonstrate the destinations audibly. */
+    {
+        static const uint8_t fenv_depth[4] = {44u, 30u, 18u, 0u};
+        static const uint8_t morph_depth[4] = {66u, 78u, 0u, 0u};
+        opera_x_route_set(p->v, OX_TO_ENV_AMT, fenv_depth[index]);
+        opera_x_route_set(p->v, OX_TO_MORPH, morph_depth[index]);
+    }
     for (i = 0u; i < PATCH_NAME && names[index][i]; ++i)
         p->v[NPARAM + i] = (uint8_t)names[index][i];
     for (; i < PATCH_NAME; ++i)
