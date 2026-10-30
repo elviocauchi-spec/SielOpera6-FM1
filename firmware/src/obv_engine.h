@@ -764,6 +764,12 @@ static void voice_render(voice_t *v, int32_t *out)
     const part_t *g = &pt[v->part];
     int32_t l1 = g->lvl1, l2 = g->lvl2, ln = g->lvln, drv = g->drive_q12, morph_q = g->morph_q;
     uint8_t x_depth = opera_x_expressive(g->p->v) ? g->p->v[OX_TONE] : 0u;
+    /* Choose formant coefficients once per 16-frame block, not every
+     * audio sample. Only VOX patches with LFO->MORPH need per-voice
+     * coefficients; the standard shared formant path stays cheaper. */
+    uint32_t vox_lfo_on = g->vox_active && opera_x_route_get(g->p->v, OX_TO_MORPH);
+    const svf_coef_t *vox_c1 = vox_lfo_on ? &v->vox_lfo_c1 : &g->vox_c1;
+    const svf_coef_t *vox_c2 = vox_lfo_on ? &v->vox_lfo_c2 : &g->vox_c2;
     uint32_t ft = g->ftype, xq = g->xmod_q, sy = g->sync_on, ww1 = g->w1, ww2 = g->w2;
     uint32_t x_stereo = opera_x_expressive(g->p->v) ? g->p->v[OX_WIDTH] : 0u;
     int32_t x_wide_gain = opera_x_width_gain((uint8_t)x_stereo);
@@ -855,15 +861,9 @@ static void voice_render(voice_t *v, int32_t *out)
         }
         }
         y = clampi(y, -65000, 65000);
-        if (g->vox_active) {
-            /* If routed, the changing wavetables and the actual vowel
-             * formant frequencies must follow the SAME LFO phase. */
-            int32_t per_voice = opera_x_route_get(g->p->v, OX_TO_MORPH) != 0u;
-            y = opera_x_formant_render(y,
-                        per_voice ? &v->vox_lfo_c1 : &g->vox_c1,
-                        per_voice ? &v->vox_lfo_c2 : &g->vox_c2,
-                        &v->vox_f1, &v->vox_f2);
-        }
+        if (g->vox_active)
+            y = opera_x_formant_render(y, vox_c1, vox_c2,
+                                      &v->vox_f1, &v->vox_f2);
         amp = amp0 + ((da * (int32_t)i) >> 4);
         y = (y * amp) >> 16;
         if (x_wide_gain && ((ww1 == W_SUPERSAW || ww1 == W_SUPERPULSE) ||
