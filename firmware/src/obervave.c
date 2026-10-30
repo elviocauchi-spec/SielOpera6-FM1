@@ -20,6 +20,7 @@ static void app_idle(void);
 #include "obv_dsp.h"
 #include "obv_params.h"
 #include "obv_x_waves.h"            /* Opera X: sine, triangle, three-voice wide waves */
+#include "obv_x_tables.h"           /* Opera X v0.12: harmonic/formant morphing spectra */
 #include "obv_x_motion.h"           /* Opera X v0.10: independent tone motion and stereo width */
 #include "obv_x_drive.h"            /* Opera X: correctly staged parallel stereo drive */
 #include "obv_fx.h"
@@ -637,8 +638,8 @@ static void randomize(void)
     uint32_t i, r;
     patch_t *d = &live_p[seq_trk % NTRK];
     for (i = 0; i < NPARAM; i++) d->v[i] = PDEF[i].def;
-    d->v[P_O1_WAVE] = (uint8_t)rn(1, 7);
-    d->v[P_O2_WAVE] = (uint8_t)rn(0, 7);
+    d->v[P_O1_WAVE] = (uint8_t)rn(1, 9);
+    d->v[P_O2_WAVE] = (uint8_t)rn(0, 9);
     d->v[P_O1_PW] = (uint8_t)rn(10, 110);
     d->v[P_O2_PW] = (uint8_t)rn(10, 110);
     d->v[P_O2_LVL] = (uint8_t)rn(60, 127);
@@ -710,7 +711,7 @@ static void param_value(char *s, uint32_t p, uint32_t v)   /* <= 7 characters */
     switch (PDEF[p].kind) {
     case K_BIP: if (v < 64u) { scat(s, "-"); fmt_u(t, 64u - v); } else { scat(s, v > 64u ? "+" : ""); fmt_u(t, v - 64u); } scat(s, t); break;
     case K_ONOFF: scat(s, v ? "ON" : "OFF"); break;
-    case K_WAVE: scat(s, WAVE_NAME[v & 7u]); break;
+    case K_WAVE: scat(s, WAVE_NAME[v < 10u ? v : 0u]); break;
     case K_FTYPE: scat(s, FTYPE_NAME[v % NFTYPE]); break;
     case K_MODE: scat(s, MODE_NAME[v & 3u]); break;
     case K_LSHAPE: scat(s, LSHAPE_NAME[v % 6u]); break;
@@ -896,6 +897,7 @@ static void draw_page(void)
                 uint32_t wave = ed_patch((uint32_t)p)->v[p == P_O1_PW ? P_O1_WAVE : P_O2_WAVE];
                 if (wave == W_SUPERSAW) k[i].label = "DETUNE";
                 else if (wave == W_SUPERPULSE) k[i].label = "WIDTH";
+                else if (wave == W_SPECTRAL || wave == W_VOX) k[i].label = "MORPH";
             }
             k[i].v = ed_patch((uint32_t)p)->v[p];
             k[i].max = PDEF[p].max;
