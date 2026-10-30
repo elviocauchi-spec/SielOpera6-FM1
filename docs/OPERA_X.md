@@ -321,3 +321,87 @@ hardware remains around <=4000us peak.
 
 Neither waveform-distance regression nor a clean build guarantees
 subjectively even morphing; user listening is decisive.
+
+## Opera X v0.15 — live, editable LFO destinations
+
+This builds on the v0.14 absolute-frequency two-formant VOX oscillator and
+the already working v0.13 five-stage MORPH and v0.11 DRIVE return.
+Two new editable routing depths appear on the existing **LFO+** page:
+
+| Knob | Label | Destination | Range |
+| --- | --- | --- | --- |
+| 1 | PITCH> | Legacy oscillator pitch destination | Existing values |
+| 2 | PWM> | Legacy oscillator PWM destination | Existing values |
+| **3** | **ENV AMT** | LFO changes the **depth** of the filter envelope | 0–100% |
+| **4** | **MORPH** | LFO moves spectral/VOX oscillator MORPH position | 0–100% |
+
+**LFO+ is the third page when pressing LFO repeatedly.** The first LFO
+page sets SHAPE, RATE, DELAY and PHASE. The second LFO DEST page still
+sets PITCH, PWM, FILTER and AMP amounts. Both new destinations use that
+same main LFO, including per-note phase spread and delay/fade.
+
+The new ENV AMT modulation changes the signed amount by up to +/-24
+of the existing ENV AMT control steps (roughly +/-36 semitones of
+envelope influence at full envelope level). It does not directly change
+attack, decay, sustain or release times. A note's filter-envelope ADSR
+must be producing a nonzero signal for ENV AMT modulation to be audible.
+The original FILTER destination still directly moves filter cutoff
+without regard to envelope level.
+
+The new MORPH routing works on OSC 1 or OSC 2 whenever its wave is
+**EVOLVE** or **VOX MORPH**. It acts *in addition* to Opera X's earlier
+automatic spectral motion, using the real editable LFO. Its movement
+tapers at the exact 0 and 127 endpoints, so turning the manual MORPH
+knob fully left or right always selects the true end spectrum.
+At intermediate MORPH positions it can create clearly audible
+timbre movement. For VOX MORPH, both wavetable content and the two
+independent absolute-frequency formant filters follow the same LFO
+movement. Formant coefficients are computed once per 16-frame control
+block, never in the audio sample loop.
+
+### Compatibility with earlier programs and user saves
+
+**The sound parameter and patch file formats have not changed:**
+NPARAM=63, a fixed 10-character name at bytes 63..72, and an 80-byte
+saved patch. The new route marker is at byte 73. For marked Opera X
+patches, route values use free bytes 78 and 79; for a vintage SIEL
+patch, values use bytes 74 and 75, preserving the SIEL oscillator
+footage marker and setting in 78 and 79. An older patch with no marker
+has both destinations OFF, regardless of what is in spare bytes.
+A first edit safely enables and initializes just the two route slots.
+
+The stock factory preview defaults are:
+- **95 X AURORA:** LFO ENV AMT 44/127, MORPH 66/127.
+- **96 X VOXSCAPE:** LFO ENV AMT 30/127, MORPH 78/127.
+- **97 X HOTLEAD:** LFO ENV AMT 18/127, MORPH OFF.
+- **98 X DEEPBASS:** Both routes OFF.
+
+**Saved user patches always take precedence** over new ROM factory
+defaults. If you previously saved over 95 or 96, the firmware will not
+overwrite the saved version. You can, however, turn up the new LFO+
+destinations on that saved patch, then SAVE it again.
+
+### Listening and performance check
+
+1. Load the unsaved 95 preset and hold a chord. On LFO+ turn MORPH
+   to 0%, then to 50–70%. Listen for changes in the harmonic spectrum.
+2. On the LFO page increase RATE; the motion should become faster.
+   Try changing the LFO SHAPE from triangle to square for an obvious
+   rhythmic comparison.
+3. On LFO+ increase ENV AMT from 0 to 70%; with the filter envelope
+   active you should hear its evolving intensity change. LFO DEST
+   FILTER still provides an independent direct filter sweep.
+4. Load 96 and sweep MORPH on OSC 1 as well as LFO+ MORPH. Unlike a
+   harmonic-only approximation, the two formant resonances in this
+   version remain at constant frequencies across keyboard notes.
+5. Finally hold six-note chords with DRIVE and FX enabled, and read
+   the GLOBAL audio render time. The previous emulator reported
+   approximately 2570 us; v0.15 includes additional per-voice filter
+   work on VOX and must be benchmarked before claiming it is safe on
+   the physical FM1.
+
+These virtual LFO+ routes are currently editable through the FM1
+panel and persist with SAVE; they are **not yet assignable as separate
+MIDI CC parameters or sequencer automation lanes**. The original
+parameter indices, MIDI CC mappings and factory SIEL conversion
+remain intact.
