@@ -80,6 +80,16 @@ static inline int32_t opera_x_lfo_env_amount(int32_t base, int32_t lfo, uint8_t 
     return value < -64 ? -64 : value > 63 ? 63 : value;
 }
 
+/* Filter-envelope contribution is signed Q8 semitones. Centralizing
+ * the equation lets host regressions exercise the SAME calculation used
+ * by the realtime audio engine. 32768 * 64 * 390 < 2^31, so this is
+ * safely computed with 32-bit multiplies and a final shift. */
+static inline int32_t opera_x_env_cutoff_q8(int32_t env_q15, int32_t base,
+                                           int32_t lfo, uint8_t depth)
+{
+    return (env_q15 * opera_x_lfo_env_amount(base, lfo, depth) * 390) >> 15;
+}
+
 /* A note's editable LFO can move the oscillator's spectral position.
  * At the manual endpoints (0/127), modulation tapers naturally to
  * zero: the knob always means the same exact spectrum at each end.
