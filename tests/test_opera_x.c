@@ -288,12 +288,21 @@ int main(void)
         assert(opera_x_expressive(x.v)); /* v0.10 stereo/motion stays intact */
         assert(x.v[OX_RATE] == 55u && x.v[OX_TONE] == 85u && x.v[OX_WIDTH] == 62u);
         assert(x.v[PATCH_BYTES - 2u] == 64u && x.v[PATCH_BYTES - 1u] == 127u);
+        /* v0.16 response is intentionally asymmetric: 0 = untouched,
+         * positive phase = modest +12, negative phase = strong -56.
+         * Old v0.15's +/-24 often ran into the high-cutoff ceiling. */
         assert(opera_x_lfo_env_amount(30, 0, 127u) == 30);
         assert(opera_x_lfo_env_amount(30, 32767, 0u) == 30);
-        assert(opera_x_lfo_env_amount(30, 32767, 127u) > 50);
-        assert(opera_x_lfo_env_amount(30, -32768, 127u) < 10);
+        assert(opera_x_lfo_env_amount(30, -32768, 0u) == 30);
+        assert(opera_x_lfo_env_amount(30, 32767, 127u) == 42);
+        assert(opera_x_lfo_env_amount(30, -32768, 127u) == -26);
+        assert(opera_x_lfo_env_amount(30, 32767, 64u) == 36);
+        assert(opera_x_lfo_env_amount(30, -32768, 64u) == 2);
         assert(opera_x_lfo_env_amount(63, 32767, 127u) == 63);
         assert(opera_x_lfo_env_amount(-64, -32768, 127u) == -64);
+        assert(opera_x_env_cutoff_q8(0, 30, -32768, 127u) == 0);
+        assert(opera_x_env_cutoff_q8(32767, 30, 0, 127u) ==
+               opera_x_env_cutoff_q8(32767, 30, -32768, 0u));
         assert(opera_x_lfo_morph(64u, 0, 127u) == 64u);
         assert(opera_x_lfo_morph(64u, 32767, 0u) == 64u);
         assert(opera_x_lfo_morph(64u, 32767, 127u) > 110u);
@@ -303,6 +312,50 @@ int main(void)
         for (j = 0; j < 127u; ++j) {
             int32_t pos = opera_x_lfo_morph((uint8_t)j, 32767, 95u);
             assert(pos >= (int32_t)j && pos <= 127);
+        }
+    }
+
+    /* v0.16: don't merely check control numbers: check audible cutoff
+     * headroom and the actual low-pass output with a sustained pad signal.
+     * With the v0.15 preset cutoff, the hi-LFO point was effectively
+     * wide open and most of the ENV amount control did nothing. */
+    {
+        unsigned patch_num;
+        for (patch_num = 0u; patch_num < 2u; ++patch_num) {
+            patch_t pad;
+            svf_coef_t low_coef, high_coef;
+            svf_state_t low = {0}, high = {0};
+            uint32_t ph = 0u, inc = 0x01800000u, sample;
+            int32_t base_amt, env, center, cut_low, cut_high, diff;
+            int64_t audible_difference = 0;
+            opera_x_factory_patch(&pad, (uint8_t)patch_num);
+            base_amt = (int32_t)pad.v[P_FENV_AMT] - 64;
+            env = (int32_t)pad.v[P_FS] * 32767 / 127;
+            center = ((int32_t)pad.v[P_CUTOFF] + 8) << 8;
+            cut_low = center + opera_x_env_cutoff_q8(
+                env, base_amt, -32768,
+                opera_x_route_get(pad.v, OX_TO_ENV_AMT));
+            cut_high = center + opera_x_env_cutoff_q8(
+                env, base_amt, 32767,
+                opera_x_route_get(pad.v, OX_TO_ENV_AMT));
+            diff = cut_high - cut_low;
+            assert(diff > 5000);       /* >19.5 semitones across LFO cycle */
+            assert(cut_high < (136 << 8)); /* never cap at maximum filter Hz */
+            assert(cut_low > (45 << 8));  /* don't disappear into sub-bass */
+            svf_coef(&low_coef, cut_low, 7200);
+            svf_coef(&high_coef, cut_high, 7200);
+            for (sample = 0u; sample < 2048u; ++sample, ph += inc) {
+                int32_t input = opera_x_wt_lookup(
+                    ph, inc, 63u, patch_num == 1u ? 1u : 0u) >> 1;
+                int32_t lp_a,bp_a,hp_a,lp_b,bp_b,hp_b;
+                svf_step(&low_coef, &low, input, &lp_a, &bp_a, &hp_a);
+                svf_step(&high_coef, &high, input, &lp_b, &bp_b, &hp_b);
+                if (sample >= 512u) {
+                    int32_t d = lp_a - lp_b;
+                    audible_difference += d < 0 ? -(int64_t)d : d;
+                }
+            }
+            assert(audible_difference / 1536u > 400u);
         }
     }
 
@@ -380,6 +433,6 @@ int main(void)
     assert(patch.v[P_MODE] == M_MONO);
     opera_x_factory_patch(&patch, 3u);
     assert(patch.v[P_O1_WAVE] == W_SINE);
-    puts("OPERA X: dual LFO routes, formant vowels, preserved footage, full-range MORPH and DRIVE pass");
+    puts("OPERA X: audible ENV AMT, dual LFO routes, formants, preserved footage and DRIVE pass");
     return 0;
 }
