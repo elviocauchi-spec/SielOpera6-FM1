@@ -1,7 +1,7 @@
-name: Build Opera X v0.11 evolving-stereo + DRIVE firmware
+name: Build Opera X v0.12 spectral and formant MORPH firmware
 on:
   push:
-    branches: [opera-x-v011-spectral]
+    branches: [opera-x-v012-wavetable]
     paths:
       - 'firmware/src/siel_factory_*.h'
       - 'firmware/src/obervave.c'
@@ -63,12 +63,12 @@ jobs:
             fi
           done
           test -f "$HOME/fw-AC79_AIoT_SDK/cpu/wl82/tools/uboot.boot"
-      - name: Build Opera X v0.11 evolve FM1 preview
+      - name: Build Opera X v0.12 morph FM1 preview
         run: BOARD=fm1 sh build.sh
       - name: Verify firmware
         run: test -s build/obervave.fwsc
       - uses: actions/upload-artifact@v4
         with:
-          name: OPERA-X-v0.11-EVOLVE-STEREO-DRIVE-PREVIEW
+          name: OPERA-X-v0.12-SPECTRAL-VOX-MORPH-PREVIEW
           path: build/obervave.fwsc
           if-no-files-found: error
