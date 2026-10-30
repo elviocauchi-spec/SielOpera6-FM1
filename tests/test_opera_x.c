@@ -353,6 +353,12 @@ int main(void)
         assert(opera_x_expressive(x.v)); /* v0.10 stereo/motion stays intact */
         assert(x.v[OX_RATE] == 55u && x.v[OX_TONE] == 85u && x.v[OX_WIDTH] == 62u);
         assert(x.v[PATCH_BYTES - 2u] == 64u && x.v[PATCH_BYTES - 1u] == 127u);
+        x.v[P_O1_WAVE] = W_SPECTRAL;
+        assert(!opera_x_env_morph_enabled(x.v)); /* preserved v0.17 */
+        x.v[OX_ROUTE_TAG_AT] = OX_ENV_MORPH_TAG;
+        assert(opera_x_env_morph_enabled(x.v));
+        assert(opera_x_route_get(x.v, OX_TO_ENV_AMT) == 64u);
+        assert(opera_x_route_get(x.v, OX_TO_MORPH) == 127u);
         /* v0.16 response is intentionally asymmetric: 0 = untouched,
          * positive phase = modest +12, negative phase = strong -56.
          * Old v0.15's +/-24 often ran into the high-cutoff ceiling. */
@@ -464,6 +470,11 @@ int main(void)
         assert(!opera_x_env_morph_enabled(pv));  /* unmarked vintage */
         pv[OX_MAGIC] = OX_TAG;
         pv[OX_RATE] = 50u; pv[OX_TONE] = 64u; pv[OX_WIDTH] = 32u;
+        assert(opera_x_env_morph_eligible(pv));
+        assert(!opera_x_env_morph_enabled(pv)); /* saved v0.17 opt-out */
+        pv[OX_ROUTE_TAG_AT] = OX_ROUTE_TAG;
+        assert(!opera_x_env_morph_enabled(pv)); /* old LFO routes marker */
+        pv[OX_ROUTE_TAG_AT] = OX_ENV_MORPH_TAG;
         assert(opera_x_env_morph_enabled(pv));
         pv[P_O1_WAVE] = W_SAW;
         pv[P_O2_WAVE] = W_SUPERPULSE;
@@ -544,7 +555,8 @@ int main(void)
         assert(patch.v[OX_RATE] <= 127u);
         assert(patch.v[OX_MAGIC] == OX_TAG);
         assert(opera_x_factory_drive_send((uint8_t)i) > 0u);
-        assert(patch.v[OX_ROUTE_TAG_AT] == OX_ROUTE_TAG);
+        assert(patch.v[OX_ROUTE_TAG_AT] ==
+               (i < 2u ? OX_ENV_MORPH_TAG : OX_ROUTE_TAG));
         assert(patch.v[OX_MAGIC] == OX_TAG); /* no metadata alias */
         if (i < 2u) {
             assert(opera_x_route_get(patch.v, OX_TO_ENV_AMT) >= 25u);
