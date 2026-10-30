@@ -26,6 +26,7 @@ typedef struct {
     env_t fe, ae;
     svf_state_t f1, f2;
     svf_coef_t c1, c2;
+    svf_state_t vox_f1, vox_f2;        /* Opera X: 2 formants per voice, VOX only */
     uint32_t inc1, inc2, pw1, pw2;              /* this block's oscillator settings */
     int32_t amp0, amp1;                         /* Q15 at the block's start and end */
     int32_t pitch16, target16;                  /* Q16 semitones: the glide */
@@ -113,6 +114,8 @@ typedef struct {
     int32_t lvl1, lvl2, lvln, drive_q12, reso_k, vint, sus_f, sus_a, gain_q12, morph_q;
     int32_t cut_sm, reso_sm;                    /* CUTOFF and RESO slewed (Q8), ~25 ms: a CC sweep in semitone steps glides */
     uint32_t pw1_base, pw2_base, w1, w2, ftype, sync_on, xmod_q, glide_k;
+    svf_coef_t vox_c1, vox_c2;        /* shared across voices of this part */
+    uint32_t vox_active;              /* VOX effects bypass all other sounds */
 } part_t;
 static part_t pt[NPART] = {
     {.p = &live_p[0], .last_pitch16 = 60 << 16},
@@ -161,6 +164,10 @@ static void voice_start(voice_t *v, uint32_t part, uint32_t note, uint32_t vel, 
     opera_x_init_aux(&v->x1_l, &v->x1_r, v->o1.ph);
     opera_x_init_aux(&v->x2_l, &v->x2_r, v->o2.ph);
     v->x_wide_lp = 0;
+    /* A voice can be reused after a different patch: formants must never
+     * inherit the previous voice's resonant filter memory. */
+    v->vox_f1.ic1 = v->vox_f1.ic2 = 0;
+    v->vox_f2.ic1 = v->vox_f2.ic2 = 0;
     /* The original POLY engine spreads each physical voice card across
      * different pan positions. That made a chord sound like unrelated notes
      * jumping left and right. X patches keep every note centered and make
@@ -638,6 +645,14 @@ static void block_globals(part_t *g)            /* a sound's derived numbers, on
     g->pw2_base = ((uint32_t)pv[P_O2_PW] << 25) + (1u << 24);
     g->w1 = pv[P_O1_WAVE];
     g->w2 = pv[P_O2_WAVE];
+    /* Vowel identity must be stable in absolute frequency when a note
+     * changes pitch. Compute two resonant peaks once per PART control
+     * block (not once per voice and not once per audio frame). */
+    g->vox_active = (uint32_t)opera_x_vox_active(pv);
+    if (g->vox_active) {
+        uint8_t morph = opera_x_vox_position(pv, g->x_timbre_val, g->x_motion_val);
+        opera_x_formant_coeffs(morph, &g->vox_c1, &g->vox_c2);
+    }
     g->ftype = pv[P_FTYPE];
     g->morph_q = pv[P_FMORPH];                  /* SEM: 0 LP, 64 notch, 127 HP */
     g->sync_on = pv[P_SYNC];
@@ -816,17 +831,21 @@ static void voice_render(voice_t *v, int32_t *out)
         }
         }
         y = clampi(y, -65000, 65000);
+        if (g->vox_active)
+            y = opera_x_formant_render(y, &g->vox_c1, &g->vox_c2,
+                                      &v->vox_f1, &v->vox_f2);
         amp = amp0 + ((da * (int32_t)i) >> 4);
         y = (y * amp) >> 16;
-        if (x_wide_gain && (ww1 >= W_SUPERSAW || ww2 >= W_SUPERSAW)) {
+        if (x_wide_gain && ((ww1 == W_SUPERSAW || ww1 == W_SUPERPULSE) ||
+                            (ww2 == W_SUPERSAW || ww2 == W_SUPERPULSE))) {
             int32_t side = 0, wet;
             /* The wide oscillators have independently running phases.
              * Extract their L/R differences without extra oscillators
              * or a second stereo filter. A simple one-pole low-pass
              * prevents a harsh unfiltered side channel in dark pads. */
-            if (ww1 >= W_SUPERSAW)
+            if (ww1 == W_SUPERSAW || ww1 == W_SUPERPULSE)
                 side += opera_x_side_pair(v->x1_l.prev, v->x1_r.prev, l1);
-            if (ww2 >= W_SUPERSAW)
+            if (ww2 == W_SUPERSAW || ww2 == W_SUPERPULSE)
                 side += opera_x_side_pair(v->x2_l.prev, v->x2_r.prev, l2);
             side = clampi(side, -65000, 65000);
             v->x_wide_lp = opera_x_side_smooth(v->x_wide_lp, side);
