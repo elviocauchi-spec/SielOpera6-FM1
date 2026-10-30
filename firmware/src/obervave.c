@@ -232,6 +232,15 @@ static void trk_load(uint32_t t, uint32_t n)    /* track t: program n */
     prog_get(n, &p);
     if (!t) fx_keep(&p);                        /* (track A: the effects stay) */
     live_p[t] = p;
+    /* Showcase programs set an intentional DRIVE send when selected.
+     * Crucially, this changes only the mixer send on this track, not the
+     * shared FX chain or the synthesis parameters of any SIEL program.
+     * Never overwrite a saved user program's custom mixer decisions. */
+    if (n >= 95u && n < 99u && !psect[n / PS_N].used[n % PS_N]) {
+        uint8_t dsend = opera_x_factory_drive_send((uint8_t)(n - 95u));
+        set.mix_drv[t] = dsend;
+        ctl_mix_drv[t] = dsend;
+    }
     trk_prog[t] = n;
     trk_edited[t] = 0;
     set.tprog[t] = (uint8_t)n;
