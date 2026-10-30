@@ -11,7 +11,7 @@
  * 5-stage OO > OH > AH > EH > EE MORPH path. The existing VOX table remains
  * the excitation source. One pair of SVF coefficients is shared by ALL
  * voices playing the same part, recalculated once every 16 frames, with
- * only two new filter states per VOX voice (32 bytes; ~192 bytes at NV=6).
+ * only two new filter states per VOX voice (16 bytes; ~96 bytes at NV=6).
  *
  * Positions are approximate vowel formants, not language-specific measured
  * speech or recorded voices. Both filters are 12 dB SVF band-pass sections.
