@@ -52,7 +52,7 @@ static void opera_x_factory_patch(patch_t *p, uint8_t index)
         p->v[P_O2_LVL] = 54u;
         p->v[P_O2_SEMI] = 24u;
         p->v[P_O2_FINE] = 66u;
-        p->v[P_CUTOFF] = 101u;
+        p->v[P_CUTOFF] = 88u;     /* v0.16: enough room for envelope-LFO sweeps */
         p->v[P_RESO] = 17u;
         p->v[P_FENV_AMT] = 83u;
         p->v[P_FTYPE] = F_LP12;        /* keep the upper harmonic morph audible */
@@ -83,7 +83,7 @@ static void opera_x_factory_patch(patch_t *p, uint8_t index)
         p->v[P_O2_SEMI] = 36u;        /* upper-octave breath/harmonic sheen */
         p->v[P_O2_FINE] = 61u;
         p->v[P_NOISE] = 7u;           /* subtle breath */
-        p->v[P_CUTOFF] = 110u;
+        p->v[P_CUTOFF] = 93u;     /* v0.16: keep vowel peaks but avoid open-filter ceiling */
         p->v[P_RESO] = 11u;
         p->v[P_FTYPE] = F_LP12;
         p->v[P_FENV_AMT] = 70u;
@@ -160,7 +160,7 @@ static void opera_x_factory_patch(patch_t *p, uint8_t index)
      * 10-character name or any vintage parameter. Bass stays essentially
      * fixed; the evolving pads demonstrate the destinations audibly. */
     {
-        static const uint8_t fenv_depth[4] = {44u, 30u, 18u, 0u};
+        static const uint8_t fenv_depth[4] = {63u, 52u, 18u, 0u};
         static const uint8_t morph_depth[4] = {66u, 78u, 0u, 0u};
         opera_x_route_set(p->v, OX_TO_ENV_AMT, fenv_depth[index]);
         opera_x_route_set(p->v, OX_TO_MORPH, morph_depth[index]);
