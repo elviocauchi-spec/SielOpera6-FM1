@@ -105,6 +105,7 @@ typedef struct {
     uint32_t lfo_ph, lfo_rnd_a, lfo_rnd_b;
     uint32_t x_motion_ph;        /* independent motion, shared per part, separate from legacy LFO */
     int32_t x_motion_val;        /* v0.10 expressive motion */
+    int32_t x_timbre_val;        /* v0.11: separate, faster, phase-shifted harmonic motion */
     int32_t lfo_val;                            /* this block, Q15 */
     int32_t last_pitch16;                       /* where a glide starts from */
     int32_t fenv_amt, keytrk, velflt, lfo_pd, lfo_fd, lfo_pwd, lfo_ad, wheel_q, bend8, env_o2, det_fine8;
@@ -159,7 +160,14 @@ static void voice_start(voice_t *v, uint32_t part, uint32_t note, uint32_t vel, 
     opera_x_init_aux(&v->x1_l, &v->x1_r, v->o1.ph);
     opera_x_init_aux(&v->x2_l, &v->x2_r, v->o2.ph);
     v->x_wide_lp = 0;
-    voice_pan(v, pan);
+    /* The original POLY engine spreads each physical voice card across
+     * different pan positions. That made a chord sound like unrelated notes
+     * jumping left and right. X patches keep every note centered and make
+     * width inside the note using their detuned side oscillators instead. */
+    if (opera_x_expressive(pv) && pv[P_MODE] == M_POLY)
+        voice_pan(v, 0);
+    else
+        voice_pan(v, pan);
 }
 
 static int part_grouped(uint32_t part)
@@ -586,8 +594,10 @@ static void lfo_tick(part_t *g)
     if (opera_x_expressive(g->p->v)) {
         g->x_motion_ph += opera_x_motion_inc(g->p->v[OX_RATE]);
         g->x_motion_val = opera_x_motion(g->x_motion_ph);
+        g->x_timbre_val = opera_x_timbre_motion(g->x_motion_ph);
     } else {
         g->x_motion_val = 0;
+        g->x_timbre_val = 0;
     }
 }
 
@@ -726,6 +736,7 @@ static void voice_render(voice_t *v, int32_t *out)
     int32_t amp0 = v->amp0, da = v->amp1 - v->amp0, gl = v->gl, gr = v->gr, o2n = v->o2.prev;
     const part_t *g = &pt[v->part];
     int32_t l1 = g->lvl1, l2 = g->lvl2, ln = g->lvln, drv = g->drive_q12, morph_q = g->morph_q;
+    uint8_t x_depth = opera_x_expressive(g->p->v) ? g->p->v[OX_TONE] : 0u;
     uint32_t ft = g->ftype, xq = g->xmod_q, sy = g->sync_on, ww1 = g->w1, ww2 = g->w2;
     uint32_t x_stereo = opera_x_expressive(g->p->v) ? g->p->v[OX_WIDTH] : 0u;
     int32_t x_wide_gain = opera_x_width_gain((uint8_t)x_stereo);
@@ -733,12 +744,21 @@ static void voice_render(voice_t *v, int32_t *out)
      * Stereo stays an optional supplement, never a mono-level replacement. */
     if (x_wide_gain) x_wide_gain += (x_wide_gain * g->x_motion_val) >> 18;
     uint32_t inc1_l = inc1, inc1_r = inc1, inc2_l = inc2, inc2_r = inc2;
+    uint32_t width1 = g->p->v[P_O1_PW], width2 = g->p->v[P_O2_PW];
+    if (x_depth) {
+        /* Two independently phased motions: filter opens over several
+         * seconds while detune width and the harmonic layer move faster.
+         * Preserve unmarked patches without extra per-sample processing. */
+        width1 = opera_x_animated_detune((uint8_t)width1, g->x_timbre_val, x_depth);
+        width2 = opera_x_animated_detune((uint8_t)width2, -g->x_timbre_val, x_depth);
+        l2 = opera_x_animated_level(l2, g->x_timbre_val, x_depth);
+    }
     /* Detune rates are derived once per control block, not per sample.
      * Oscillator PW doubles as wide-wave detune; no extra patch bytes. */
     if (ww1 == W_SUPERSAW || ww1 == W_SUPERPULSE)
-        opera_x_detuned_incs(inc1, g->p->v[P_O1_PW], &inc1_l, &inc1_r);
+        opera_x_detuned_incs(inc1, width1, &inc1_l, &inc1_r);
     if (ww2 == W_SUPERSAW || ww2 == W_SUPERPULSE)
-        opera_x_detuned_incs(inc2, g->p->v[P_O2_PW], &inc2_l, &inc2_r);
+        opera_x_detuned_incs(inc2, width2, &inc2_l, &inc2_r);
     int32_t hw1 = (ww1 & OSC_SAW ? -65536 : 0) + (ww1 & OSC_PLS ? -65536 : 0);
     int32_t hw2 = (ww2 & OSC_SAW ? -65536 : 0) + (ww2 & OSC_PLS ? -65536 : 0);
     for (i = 0; i < CTL; i++) {
