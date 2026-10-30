@@ -487,3 +487,84 @@ send/return are unchanged. Any saved user patch takes priority over
 new ROM factory defaults 95 and 96. If you previously saved 95/96,
 you can still raise ENV AMT manually, but the new factory cutoff
 values will not be forced onto your custom patches.
+
+## Opera X v0.17 — LFO PWM is now an audible modulation
+
+**Problem reported:** "PWM in LFO DEST is underwhelming".
+
+### Root cause
+
+The original engine squares the LFO PWM depth: `d*d/128`.
+At displayed setting 43, this resulted in approximately `14/127`
+of the maximum motion — only around **2.8 percentage points of pulse
+width**, despite the control looking one-third open. The v0.16
+VOXSCAPE factory patch used exactly 43 and its pulse oscillator was
+mixed quietly under a prominent VOX wavetable and formant chain.
+AURORA had **no pulse oscillator at all** (spectral wavetable +
+SUP SAW), so conventional PWM couldn't do anything there.
+
+### Changes
+
+- **The original Opera 6/SIEL and unmarked patches retain their exact
+  historical depth curve.** The new linear response activates only
+  for `opera_x_expressive()` marked X patches.
+- For an Opera X PULSE, SAW+PULSE or SUP PLS oscillator, the 0..127
+  LFO DEST PWM amount now corresponds to **linear duty-cycle
+  movement**, reaching a maximum of roughly +/-25% of the pulse period.
+  With a 43 setting it gives +/-8.5% rather than +/-2.8%.
+  Both audio-rate PolyBLEP pulse oscillators and their event handling
+  are otherwise unchanged.
+- SUP SAW is not a pulse wave. On this oscillator, the same LFO
+  PWM destination now controls the **detune spread of its two side
+  oscillators** instead. This creates evolving stereo chorus/beating
+  without detuning the center oscillator or adding more oscillators.
+- When PWM is routed to a SUP SAW, the LFO DEST knob label is
+  **PWM/WID** to clarify that it means detune width, not a physical
+  pulse-width parameter.
+- OSC 1/2 routing remains on **LFO+ knob 2 (PWM>)**. Select OSC1,
+  OSC2 or BOTH as desired. For a pure VOX or EVOLVE wavetable,
+  use LFO+ knob 4 **MORPH** instead: wavetables have no pulse width.
+  SAW, SINE and TRI likewise do not have a pulse-width control.
+- Each modulated detune increment is recalculated once per 16-frame
+  *control block*, like the previous width controls. There are
+  **no extra audio-rate oscillators** and no new patch bytes.
+- The PWM phase calculation no longer invokes undefined behavior
+  by left-shifting a negative signed integer. It uses equivalent
+  safe fixed-point multiplication and retains legacy output.
+- Factory AURORA now has an audible PWM/WID setting **74** routed
+  to OSC2 SUP SAW. Its stereo layer level is 62 (formerly 54).
+  Factory VOXSCAPE has PWM **83** routed to OSC2 SUP PLS and a
+  stronger pulse layer level 60 (formerly 42), while keeping the
+  pitch-aware formant and spectral oscillator unchanged.
+  Saved user patches in 95/96 still override these ROM defaults.
+
+### How to compare
+
+1. Select an **unsaved** factory **95 X AURORA**. Press LFO twice
+   for **LFO DEST** and turn **PWM/WID** 0 -> 50 -> 100%.
+   LFO+ PWM> should be set to OSC2; it is in the ROM preset.
+   Hold a mid-register chord with headphones to hear the stereo
+   beating gradually speed up and slow down.
+2. Select **96 X VOXSCAPE**. On **LFO DEST**, sweep PWM 0 -> 100%.
+   LFO+ PWM> should be OSC2. With LFO shape **SQUARE** and a
+   middle RATE, the superpulse should alternate between distinctly
+   different duty cycles. On TRI, expect a smoother changing
+   harmonic texture.
+3. To hear conventional PWM in isolation, set OSC1 = PULSE,
+   OSC1 LEVEL high, OSC2 LEVEL = 0, set PW near 50%, and choose
+   LFO+ PWM> = OSC1 or BOTH. This checks the actual pulse waveform
+   without a second oscillator masking it.
+4. On the GLOBAL page check the render-time readout while playing
+   six notes with chorus/reverb and DRIVE enabled. The prior v0.15
+   user report of **3200 us on an online emulator** is a useful
+   baseline; aim for <=4000 us peak against a ~5800-us deadline.
+   It does not replace a physical FM1 worst-case performance test.
+
+### Automated tests
+
+Host unit tests compare pulse waveform output at opposite LFO peaks,
+compare independent supersaw audio with modulated detune width,
+verify original SIEL squared depth at 43, check safe phase bounds
+and confirm new 95/96 preset routing/level defaults. This verifies
+DSP behavior, but only listening can confirm whether the change is
+satisfying and musical.
