@@ -668,12 +668,7 @@ static void block_globals(part_t *g)            /* a sound's derived numbers, on
 
 static inline uint32_t pw_mod(uint32_t base, int32_t mod)
 {
-    /* Signed left-shift on negative PWM modulation is undefined C; use
-     * multiplication so large negative LFO cycles are deterministic. */
-    int64_t p = (int64_t)base + (int64_t)mod * 256;
-    if (p < (1 << 26)) p = 1 << 26;
-    if (p > (int64_t)0xFFFFFFFFu - (1 << 26)) p = (int64_t)0xFFFFFFFFu - (1 << 26);
-    return (uint32_t)p;
+    return opera_x_pwm_phase(base, mod);
 }
 
 static void voice_block(voice_t *v, uint32_t card)
