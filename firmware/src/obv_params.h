@@ -31,7 +31,7 @@ enum {
 
 enum { K_NUM, K_BIP, K_ONOFF, K_WAVE, K_FTYPE, K_MODE, K_LSHAPE, K_LPHASE, K_TO, K_ARP, K_DIV, K_SEMI, K_MS, K_HZ,
        K_PCT, K_CUT, K_OCT, K_MORPH, K_DDIV };
-enum { W_OFF, W_SAW, W_PLS, W_BOTH, W_SINE, W_TRI, W_SUPERSAW, W_SUPERPULSE };
+enum { W_OFF, W_SAW, W_PLS, W_BOTH, W_SINE, W_TRI, W_SUPERSAW, W_SUPERPULSE, W_SPECTRAL, W_VOX };
 enum { F_LP12, F_HP12, F_BP12, F_NOTCH, F_LP24, F_SEM, NFTYPE };   /* SEM: LP .. notch .. HP by MORPH */
 enum { M_POLY, M_DUAL, M_UNISON, M_MONO };
 enum { L_TRI, L_SAW, L_RAMP, L_SQR, L_SH, L_RND };
@@ -46,11 +46,11 @@ typedef struct {
     uint8_t max, def, kind, cc;                 /* cc: a fixed MIDI CC, 0 = taken from 20 up in table order */
 } pdef_t;
 static const pdef_t PDEF[NPARAM] = {
-    [P_O1_WAVE] = {"WAVE", 7, W_SAW, K_WAVE, 0},
+    [P_O1_WAVE] = {"WAVE", 9, W_SAW, K_WAVE, 0},
     [P_O1_PW] = {"PW", 127, 64, K_PCT, 0},
     [P_O1_LVL] = {"LEVEL", 127, 110, K_NUM, 0},
     [P_NOISE] = {"NOISE", 127, 0, K_NUM, 0},
-    [P_O2_WAVE] = {"WAVE", 7, W_SAW, K_WAVE, 0},
+    [P_O2_WAVE] = {"WAVE", 9, W_SAW, K_WAVE, 0},
     [P_O2_PW] = {"PW", 127, 64, K_PCT, 0},
     [P_O2_LVL] = {"LEVEL", 127, 100, K_NUM, 0},
     [P_O2_SEMI] = {"SEMI", 48, 24, K_SEMI, 0},
@@ -111,7 +111,7 @@ static const pdef_t PDEF[NPARAM] = {
     [P_REV_MIX] = {"MIX", 127, 0, K_NUM, 0},
 };
 
-static const char *const WAVE_NAME[8] = {"OFF", "SAW", "PULSE", "SAW+PLS", "SINE", "TRI", "SUP SAW", "SUP PLS"};
+static const char *const WAVE_NAME[10] = {"OFF", "SAW", "PULSE", "SAW+PLS", "SINE", "TRI", "SUP SAW", "SUP PLS", "EVOLVE", "VOX MORPH"};
 static const char *const FTYPE_NAME[NFTYPE] = {"LP 12", "HP 12", "BP 12", "NOTCH", "LP 24", "SEM"};
 static const char *const MODE_NAME[4] = {"POLY", "DUAL", "UNISON", "MONO"};
 static const char *const LSHAPE_NAME[6] = {"TRI", "SAW", "RAMP", "SQUARE", "S&H", "RANDOM"};
