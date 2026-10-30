@@ -8,6 +8,7 @@
 #include "obv_dsp.h"
 #include "obv_params.h"
 #include "obv_x_waves.h"
+#include "obv_x_motion.h"
 #include "obv_x_patches.h"
 
 static int64_t test_osc(uint32_t wave)
@@ -63,6 +64,34 @@ int main(void)
     assert(test_osc(W_SUPERSAW) > 1000000);
     assert(test_osc(W_SUPERPULSE) > 1000000);
 
+    /* v0.10: independent slow filter motion is bounded, bipolar and not
+     * confused with the legacy patch LFO controls. */
+    assert(opera_x_motion(0u) == -32768);
+    assert(opera_x_motion(0x40000000u) == 0);
+    assert(opera_x_motion(0x80000000u) == 32767);
+    assert(opera_x_filter_delta(0, 127u) == 0);
+    assert(opera_x_filter_delta(32767, 0u) == 0);
+    assert(opera_x_filter_delta(32767, 127u) > 2600);
+    assert(opera_x_filter_delta(-32768, 127u) < -2600);
+    assert(opera_x_motion_inc(30u) > 0u);
+    assert(opera_x_width_gain(0u) == 0);
+    assert(opera_x_width_gain(127u) == 1150);
+    assert(opera_x_side_pair(12000, -9000, 127) > 10000);
+    assert(opera_x_side_pair(12000, -9000, 0) == 0);
+    {
+        int32_t lpf = 0;
+        unsigned k;
+        for (k = 0; k < 100u; ++k)
+            lpf = opera_x_side_smooth(lpf, 16000);
+        assert(lpf > 15000 && lpf <= 16000);
+        /* A marked patch produces different left/right output with nonzero
+         * side content, while width 0 collapses precisely to mono. */
+        assert((10000 + (lpf * opera_x_width_gain(90u) >> 12)) !=
+               (10000 - (lpf * opera_x_width_gain(90u) >> 12)));
+        assert((10000 + (lpf * opera_x_width_gain(0u) >> 12)) ==
+               (10000 - (lpf * opera_x_width_gain(0u) >> 12)));
+    }
+
     /* Each free slot has a meaningful and playable musical sound. */
     for (i = 0; i < 4u; ++i) {
         opera_x_factory_patch(&patch, (uint8_t)i);
@@ -74,6 +103,10 @@ int main(void)
         }
         assert(patch.v[P_O1_LVL] != 0u || patch.v[P_O2_LVL] != 0u);
         assert(patch.v[PATCH_BYTES - 2u] != 0xA6u); /* no SIEL footage marker */
+        assert(opera_x_expressive(patch.v));
+        assert(patch.v[OX_WIDTH] <= 127u && patch.v[OX_TONE] <= 127u);
+        assert(patch.v[OX_RATE] <= 127u);
+        assert(patch.v[OX_MAGIC] == OX_TAG);
     }
     opera_x_factory_patch(&patch, 0u);
     assert(patch.v[P_O1_WAVE] == W_SUPERSAW);
