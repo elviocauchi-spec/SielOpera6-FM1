@@ -21,6 +21,7 @@ typedef struct { uint32_t stage; int32_t level; } env_t;   /* level Q24 */
 typedef struct {
     osc_t o1, o2;
     osc_t x1_l, x1_r, x2_l, x2_r;   /* Opera X: detuned side oscillators, dormant for classic waves */
+    int32_t x_wide_lp;            /* only active for Opera X stereo-width patches */
     uint32_t noise;
     env_t fe, ae;
     svf_state_t f1, f2;
@@ -102,6 +103,8 @@ static uint32_t rnd_state = 0x9E3779B9u;
 typedef struct {
     const patch_t *p;
     uint32_t lfo_ph, lfo_rnd_a, lfo_rnd_b;
+    uint32_t x_motion_ph;        /* independent motion, shared per part, separate from legacy LFO */
+    int32_t x_motion_val;        /* v0.10 expressive motion */
     int32_t lfo_val;                            /* this block, Q15 */
     int32_t last_pitch16;                       /* where a glide starts from */
     int32_t fenv_amt, keytrk, velflt, lfo_pd, lfo_fd, lfo_pwd, lfo_ad, wheel_q, bend8, env_o2, det_fine8;
@@ -151,6 +154,7 @@ static void voice_start(voice_t *v, uint32_t part, uint32_t note, uint32_t vel, 
     /* Phase-offset side voices form a wide sound as soon as the note starts. */
     opera_x_init_aux(&v->x1_l, &v->x1_r, v->o1.ph);
     opera_x_init_aux(&v->x2_l, &v->x2_r, v->o2.ph);
+    v->x_wide_lp = 0;
     voice_pan(v, pan);
 }
 
@@ -574,6 +578,13 @@ static void lfo_tick(part_t *g)
     g->lfo_ph += inc;
     if (g->lfo_ph < old) { g->lfo_rnd_a = g->lfo_rnd_b; g->lfo_rnd_b = xorshift(&rnd_state); }
     g->lfo_val = lfo_shape(g, g->lfo_ph, g->p->v[P_LFO_SHAPE]);
+    /* Extra independent slow motion for marked Opera X patches only. */
+    if (opera_x_expressive(g->p->v)) {
+        g->x_motion_ph += opera_x_motion_inc(g->p->v[OX_RATE]);
+        g->x_motion_val = opera_x_motion(g->x_motion_ph);
+    } else {
+        g->x_motion_val = 0;
+    }
 }
 
 /* ---- one control block for a voice: pitch, cutoff, envelopes, amp */
@@ -690,6 +701,8 @@ static void voice_block(voice_t *v, uint32_t card)
     cut = g->cut_sm + 8 * 256 + ((fenv * g->fenv_amt * 390) >> 15)
         + ((int32_t)v->note - 60) * g->keytrk * 2 + (((int32_t)v->vel - 64) * g->velflt >> 1)
         + ((lfo * g->lfo_fd * 97) >> 15) + ((lfo * g->wheel_q * 48) >> 15) + ((VINT_CUT8[card % NCARD] * vint) >> 7);
+    if (opera_x_expressive(pv))
+        cut += opera_x_filter_delta(g->x_motion_val, pv[OX_TONE]);
     svf_coef(&v->c1, cut, g->reso_k);
     if (g->ftype == F_LP24) svf_coef(&v->c2, cut, 5793);
     /* amp */
@@ -710,6 +723,11 @@ static void voice_render(voice_t *v, int32_t *out)
     const part_t *g = &pt[v->part];
     int32_t l1 = g->lvl1, l2 = g->lvl2, ln = g->lvln, drv = g->drive_q12, morph_q = g->morph_q;
     uint32_t ft = g->ftype, xq = g->xmod_q, sy = g->sync_on, ww1 = g->w1, ww2 = g->w2;
+    uint32_t x_stereo = opera_x_expressive(g->p->v) ? g->p->v[OX_WIDTH] : 0u;
+    int32_t x_wide_gain = opera_x_width_gain((uint8_t)x_stereo);
+    /* Slowly varying width: the second LFO subtly reshapes the field.
+     * Stereo stays an optional supplement, never a mono-level replacement. */
+    if (x_wide_gain) x_wide_gain += (x_wide_gain * g->x_motion_val) >> 18;
     uint32_t inc1_l = inc1, inc1_r = inc1, inc2_l = inc2, inc2_r = inc2;
     /* Detune rates are derived once per control block, not per sample.
      * Oscillator PW doubles as wide-wave detune; no extra patch bytes. */
@@ -769,8 +787,26 @@ static void voice_render(voice_t *v, int32_t *out)
         y = clampi(y, -65000, 65000);
         amp = amp0 + ((da * (int32_t)i) >> 4);
         y = (y * amp) >> 16;
-        out[2u * i] += (y * gl) >> 12;
-        out[2u * i + 1u] += (y * gr) >> 12;
+        if (x_wide_gain && (ww1 >= W_SUPERSAW || ww2 >= W_SUPERSAW)) {
+            int32_t side = 0, wet;
+            /* The wide oscillators have independently running phases.
+             * Extract their L/R differences without extra oscillators
+             * or a second stereo filter. A simple one-pole low-pass
+             * prevents a harsh unfiltered side channel in dark pads. */
+            if (ww1 >= W_SUPERSAW)
+                side += ((v->x1_l.prev - v->x1_r.prev) * l1) >> 8;
+            if (ww2 >= W_SUPERSAW)
+                side += ((v->x2_l.prev - v->x2_r.prev) * l2) >> 8;
+            side = clampi(side, -65000, 65000);
+            v->x_wide_lp += (side - v->x_wide_lp) >> 3;
+            wet = (v->x_wide_lp * x_wide_gain) >> 12;
+            wet = (wet * amp) >> 16;
+            out[2u * i] += ((y + wet) * gl) >> 12;
+            out[2u * i + 1u] += ((y - wet) * gr) >> 12;
+        } else {
+            out[2u * i] += (y * gl) >> 12;
+            out[2u * i + 1u] += (y * gr) >> 12;
+        }
     }
     (void)o2n;
 }
