@@ -289,49 +289,84 @@ static void master_process(int32_t *out, uint32_t n)
     if (pk > ui_out_peak) ui_out_peak = pk;
 }
 
+/* Keep reverb core state and wet interpolation identical to the
+ * parallel v0.18 code. In a cascade it can run BEFORE or AFTER delay;
+ * there is still exactly one reverb tick for each processed sample. */
+static inline void fx_reverb_sample(int32_t input, int32_t *wet_l, int32_t *wet_r)
+{
+#if REV_DIV == 2u
+    int32_t pl = rv_yl, pr = rv_yr, din = input * 2;
+    if (!(fx_odd ^= 1u)) {
+        rev_tick((rv_hold + din) >> 2);
+        *wet_l = (pl + rv_yl) >> 1;
+        *wet_r = (pr + rv_yr) >> 1;
+    } else {
+        *wet_l = rv_yl;
+        *wet_r = rv_yr;
+    }
+    rv_hold = din;
+#else
+    rev_tick(input);
+    *wet_l = rv_yl;
+    *wet_r = rv_yr;
+#endif
+}
+
+/* The original VIBE parallel bus is route 0 and keeps its dry/chorus/
+ * independent returns. Only the mono INPUT to the SECOND effect changes
+ * in modes 1 and 2. Routing is stored with the drive type's unused bits,
+ * so pattern snapshots and settings stay EXACTLY the same size.
+ * There is no recursive delay<>reverb feedback loop and no second tank. */
 static void fx_process(int32_t *out, const int32_t *cs, const int32_t *ds, const int32_t *rs, uint32_t n)
 {
     uint32_t i, do_dly = dly_active != 0, do_rev = rev_active != 0;
+    uint32_t route = opera_x_fx_route(ctl_dv_type);
     int32_t cm = cho_mix, dm = dly_mix, rm = rev_mix;
     for (i = 0; i < n; i++) {
         int32_t l = out[2u * i], r = out[2u * i + 1u];
-        if (cm) {                               /* two taps a quarter turn apart on one line, around 12 ms */
-            int32_t bl = (529 << 16) + tri_q(cho_ph) * cho_depth_k, br = (529 << 16) + tri_q(cho_ph + 0x40000000u) * cho_depth_k;
+        int32_t dl_in = ds[i], rv_in = rs[i];
+        int32_t dl_wet_l = 0, dl_wet_r = 0;
+        int32_t rv_wet_l = 0, rv_wet_r = 0;
+        if (cm) { /* original chorus, unaffected by effect order */
+            int32_t bl = (529 << 16) + tri_q(cho_ph) * cho_depth_k;
+            int32_t br = (529 << 16) + tri_q(cho_ph + 0x40000000u) * cho_depth_k;
             cho_ph += cho_inc;
             line_write(&cho, cs[i]);
             l += (line_read_q16_h(&cho, bl) * cm) >> 8;
             r += (line_read_q16_h(&cho, br) * cm) >> 8;
         }
-        if (do_dly) {                           /* ping-pong: the input enters left, the feedback crosses */
-            int32_t wl, wr;
-            if (dly_cur < dly_time) { dly_cur += 1 << 15; if (dly_cur > dly_time) dly_cur = dly_time; }
-            else if (dly_cur > dly_time) { dly_cur -= 1 << 15; if (dly_cur < dly_time) dly_cur = dly_time; }
-            wl = line_read_q16(&dl, dly_cur);
-            wr = line_read_q16(&dr, dly_cur);
-            dly_lpl += ((wr - dly_lpl) * dly_tone_k) >> 8;
-            dly_lpr += ((wl - dly_lpr) * dly_tone_k) >> 8;
-            line_write(&dl, ds[i] + ((dly_lpl * dly_fb) >> 15));
-            line_write(&dr, (dly_lpr * dly_fb) >> 15);
-            l += (wl * dm) >> 8;
-            r += (wr * dm) >> 8;
+        if (route == OX_FX_REVERB_DELAY && do_rev) {
+            /* Render the reverb NOW so its wet tail can be echoed. */
+            fx_reverb_sample(rv_in, &rv_wet_l, &rv_wet_r);
+            if (do_dly)
+                dl_in = opera_x_fx_chain_feed(dl_in, rv_wet_l, rv_wet_r, rm);
+            l += (rv_wet_l * rm) >> 8;
+            r += (rv_wet_r * rm) >> 8;
         }
-        if (do_rev) {
-#if REV_DIV == 2u                               /* half rate: a pair in, the output interpolated between ticks */
-            int32_t pl = rv_yl, pr = rv_yr, din = rs[i] * 2;
-            if (!(fx_odd ^= 1u)) {
-                rev_tick((rv_hold + din) >> 2);
-                l += (((pl + rv_yl) >> 1) * rm) >> 8;
-                r += (((pr + rv_yr) >> 1) * rm) >> 8;
-            } else {
-                l += (rv_yl * rm) >> 8;
-                r += (rv_yr * rm) >> 8;
+        if (do_dly) { /* original stereo ping-pong with L/R cross-feedback */
+            if (dly_cur < dly_time) {
+                dly_cur += 1 << 15;
+                if (dly_cur > dly_time) dly_cur = dly_time;
+            } else if (dly_cur > dly_time) {
+                dly_cur -= 1 << 15;
+                if (dly_cur < dly_time) dly_cur = dly_time;
             }
-            rv_hold = din;
-#else
-            rev_tick(rs[i]);
-            l += (rv_yl * rm) >> 8;
-            r += (rv_yr * rm) >> 8;
-#endif
+            dl_wet_l = line_read_q16(&dl, dly_cur);
+            dl_wet_r = line_read_q16(&dr, dly_cur);
+            dly_lpl += ((dl_wet_r - dly_lpl) * dly_tone_k) >> 8;
+            dly_lpr += ((dl_wet_l - dly_lpr) * dly_tone_k) >> 8;
+            line_write(&dl, dl_in + ((dly_lpl * dly_fb) >> 15));
+            line_write(&dr, (dly_lpr * dly_fb) >> 15);
+            l += (dl_wet_l * dm) >> 8;
+            r += (dl_wet_r * dm) >> 8;
+            if (route == OX_FX_DELAY_REVERB && do_rev)
+                rv_in = opera_x_fx_chain_feed(rv_in, dl_wet_l, dl_wet_r, dm);
+        }
+        if (route != OX_FX_REVERB_DELAY && do_rev) {
+            /* Parallel / DELAY->REVERB: reverb processes at the end. */
+            fx_reverb_sample(rv_in, &rv_wet_l, &rv_wet_r);
+            l += (rv_wet_l * rm) >> 8;
+            r += (rv_wet_r * rm) >> 8;
         }
         out[2u * i] = sat16(l);
         out[2u * i + 1u] = sat16(r);
