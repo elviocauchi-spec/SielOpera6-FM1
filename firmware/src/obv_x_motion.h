@@ -87,9 +87,10 @@ static inline int32_t opera_x_timbre_motion(uint32_t independent_phase)
 static inline uint8_t opera_x_wt_morph(uint8_t base, int32_t timbre, int32_t slow, uint8_t depth)
 {
     int32_t movement = (timbre * 3 + slow) >> 2;  /* -32768..32767 */
-    int32_t room = base < 127u - base ? base : 127u - base;
+    int32_t center = base > 127u ? 127 : (int32_t)base;
+    int32_t room = center < 127 - center ? center : 127 - center;
     int32_t span = (room * depth * 3) / (127 * 4); /* <=75% of headroom */
-    int32_t value = (int32_t)base + ((movement * span) >> 15);
+    int32_t value = center + ((movement * span) >> 15);
     return (uint8_t)(value < 0 ? 0 : value > 127 ? 127 : value);
 }
 /* Detune width changes by up to +/-depth/4, never leaving 0..127. */
