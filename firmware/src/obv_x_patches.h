@@ -49,15 +49,15 @@ static void opera_x_factory_patch(patch_t *p, uint8_t index)
         p->v[P_AA] = 77u; p->v[P_AD] = 81u;
         p->v[P_AS] = 115u; p->v[P_AR] = 108u;
         p->v[P_LFO_SHAPE] = L_TRI;
-        p->v[P_LFO_RATE] = 39u;
-        p->v[P_LFO_PITCH] = 4u;  /* vibrato from legacy LFO, tone motion is independent */
-        p->v[P_LFO_FLT] = 12u;
+        p->v[P_LFO_RATE] = 51u;  /* audible ~0.65 Hz slow filter swell */
+        p->v[P_LFO_PITCH] = 15u;  /* previous 4 rounded to zero depth */
+        p->v[P_LFO_FLT] = 51u;    /* filtered motion even before the slow LFO completes */
         p->v[P_VEL_AMP] = 55u;
         p->v[P_SPREAD] = 105u;
         p->v[P_VOLUME] = 89u;
-        p->v[OX_RATE] = 25u;  /* slow arc */
-        p->v[OX_TONE] = 72u;
-        p->v[OX_WIDTH] = 114u;
+        p->v[OX_RATE] = 59u;  /* 4-second primary tone cycle, 2-second harmonic cycle */
+        p->v[OX_TONE] = 82u;
+        p->v[OX_WIDTH] = 74u;  /* internal stereo field; center each chord note */
         break;
     case 1: /* Soft, moving synthetic strings: one wide PWM source */
         p->v[P_O1_WAVE] = W_SUPERPULSE;
@@ -75,14 +75,16 @@ static void opera_x_factory_patch(patch_t *p, uint8_t index)
         p->v[P_AA] = 69u; p->v[P_AD] = 76u;
         p->v[P_AS] = 115u; p->v[P_AR] = 88u;
         p->v[P_LFO_SHAPE] = L_TRI;
-        p->v[P_LFO_RATE] = 50u;
-        p->v[P_LFO_PWM] = 39u;
+        p->v[P_LFO_RATE] = 55u;
+        p->v[P_LFO_PITCH] = 15u;
+        p->v[P_LFO_FLT] = 36u;
+        p->v[P_LFO_PWM] = 83u; /* continuous audible pulse-width motion */
         p->v[P_LFO_PWM_TO] = TO_O1;
         p->v[P_VINTAGE] = 35u;
         p->v[P_SPREAD] = 98u;
-        p->v[OX_RATE] = 40u;
-        p->v[OX_TONE] = 50u;
-        p->v[OX_WIDTH] = 100u;
+        p->v[OX_RATE] = 55u;  /* independent ~5-second arc */
+        p->v[OX_TONE] = 65u;
+        p->v[OX_WIDTH] = 75u;
         break;
     case 2: /* Expressive mono lead with real-time filter bite and glide */
         p->v[P_O1_WAVE] = W_SUPERSAW;
@@ -106,9 +108,9 @@ static void opera_x_factory_patch(patch_t *p, uint8_t index)
         p->v[P_VEL_FLT] = 82u;
         p->v[P_VINTAGE] = 15u;
         p->v[P_VOLUME] = 76u;
-        p->v[OX_RATE] = 66u;
-        p->v[OX_TONE] = 12u;  /* keeps the lead focused */
-        p->v[OX_WIDTH] = 51u;
+        p->v[OX_RATE] = 69u;
+        p->v[OX_TONE] = 19u;  /* keep lead punchy, not seasick */
+        p->v[OX_WIDTH] = 37u;
         break;
     default: /* Deep, controlled bass: clean sine underneath a buzzy pulse */
         p->v[P_O1_WAVE] = W_SINE;
@@ -130,9 +132,9 @@ static void opera_x_factory_patch(patch_t *p, uint8_t index)
         p->v[P_SPREAD] = 20u;
         p->v[P_VINTAGE] = 11u;
         p->v[P_VOLUME] = 83u;
-        p->v[OX_RATE] = 28u;
+        p->v[OX_RATE] = 55u;
         p->v[OX_TONE] = 0u; /* fundamental holds steady */
-        p->v[OX_WIDTH] = 23u; /* keep deep bass predominantly mono */
+        p->v[OX_WIDTH] = 18u; /* keep deep bass predominantly mono */
         break;
     }
     for (i = 0u; i < PATCH_NAME && names[index][i]; ++i)
