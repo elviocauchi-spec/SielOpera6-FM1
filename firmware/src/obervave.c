@@ -891,6 +891,19 @@ static void draw_page(void)
             layer_knob(&k[i], i);
         } else if (seq_shown()) {
             seq_knob(&k[i], i);
+        } else if (page == PG_LFO2 && (p == -2 || p == -3)) {
+            /* Two virtual controls stored in spare patch bytes. Their
+             * actual 0..127 values are saved with the user's program. */
+            patch_t *d = &live_p[seq_trk % NTRK];
+            uint32_t route = p == -2 ? OX_TO_ENV_AMT : OX_TO_MORPH;
+            uint32_t value = opera_x_route_get(d->v, route);
+            k[i].label = p == -2 ? "ENV AMT" : "MORPH";
+            k[i].v = value;
+            k[i].max = 127u;
+            k[i].bip = 0;
+            k[i].present = 1;
+            fmt_u(k[i].value, (value * 100u + 63u) / 127u);
+            scat(k[i].value, "%");
         } else if (p >= 0) {
             k[i].label = PDEF[p].name;
             /* Opera X wide oscillators use PW as detune width (and pulse
@@ -2323,6 +2336,16 @@ static void app_main(void)
                 layer_used = 1;
                 seq_turn(k, e);
                 dirty_steps = 1;
+            } else if (page == PG_LFO2 && (p == -2 || p == -3)) {
+                patch_t *d = &live_p[seq_trk % NTRK];
+                uint32_t route = p == -2 ? OX_TO_ENV_AMT : OX_TO_MORPH;
+                int32_t previous = opera_x_route_get(d->v, route);
+                int32_t now = clampi(previous + e * 2, 0, 127);
+                if (now != previous) {
+                    opera_x_route_set(d->v, route, (uint8_t)now);
+                    trk_edited[seq_trk % NTRK] = 1;
+                    dirty_hdr = 1;
+                }
             } else if (p >= 0) {
                 int32_t step = PDEF[p].max >= 100 ? 2 : 1;
                 set_param((uint32_t)p, (int32_t)ed_patch((uint32_t)p)->v[p] + e * step);
