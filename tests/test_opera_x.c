@@ -223,6 +223,36 @@ int main(void)
         }
     }
 
+    /* Also exercise the ACTUAL low-pass DSP: a waveform-distance test
+     * alone can falsely pass when a synth filter masks all timbre change.
+     * Use the 12 dB SVF at a typical bright-pad cutoff and compare every
+     * 16-position MORPH interval after the initial filter settling time. */
+    {
+        unsigned family, start;
+        svf_coef_t c;
+        svf_coef(&c, 109 << 8, 6500);
+        for (family = 0u; family < 2u; ++family) {
+            for (start = 0u; start < 127u; start += 16u) {
+                uint32_t ph = 0u, inc = 0x01800000u, n;
+                unsigned next = start + 16u <= 127u ? start + 16u : 127u;
+                svf_state_t a = {0}, b = {0};
+                int64_t diff = 0;
+                for (n = 0u; n < 1536u; ++n, ph += inc) {
+                    int32_t al, ab, ah, bl, bb, bh;
+                    int32_t v1 = opera_x_wt_lookup(ph, inc, start, family);
+                    int32_t v2 = opera_x_wt_lookup(ph, inc, next, family);
+                    svf_step(&c, &a, v1, &al, &ab, &ah);
+                    svf_step(&c, &b, v2, &bl, &bb, &bh);
+                    if (n >= 512u) {
+                        int32_t d = al - bl;
+                        diff += d < 0 ? -(int64_t)d : (int64_t)d;
+                    }
+                }
+                assert(diff / 1024u > 850u);
+            }
+        }
+    }
+
     /* Each free slot has a meaningful and playable musical sound. */
     for (i = 0; i < 4u; ++i) {
         opera_x_factory_patch(&patch, (uint8_t)i);
