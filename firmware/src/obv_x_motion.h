@@ -60,4 +60,26 @@ static inline int32_t opera_x_side_smooth(int32_t previous, int32_t next)
 {
     return previous + ((next - previous) >> 3);
 }
+
+/* A second, harmonically related but phase-offset motion source drives
+ * oscillator balance and beating, independently of the filter's slow arc.
+ * No new oscillator or audio-rate DSP: evaluated once per 16 frames. */
+static inline int32_t opera_x_timbre_motion(uint32_t slow_phase)
+{
+    return opera_x_motion(slow_phase * 2u + 0x60000000u);
+}
+/* Detune width changes by up to +/-depth/4, never leaving 0..127. */
+static inline uint8_t opera_x_animated_detune(uint8_t base, int32_t motion, uint8_t depth)
+{
+    int32_t d = (motion * (int32_t)depth) >> 17;
+    int32_t w = (int32_t)base + d;
+    return (uint8_t)(w < 0 ? 0 : w > 127 ? 127 : w);
+}
+/* A companion harmonic layer swells +/- depth/256 of its own level.
+ * It does not pump the entire note, and it never makes the layer negative. */
+static inline int32_t opera_x_animated_level(int32_t base, int32_t motion, uint8_t depth)
+{
+    int32_t delta = (motion * (int32_t)depth) >> 15;
+    return (base * (256 + delta)) >> 8;
+}
 #endif /* OBV_X_MOTION_H */
