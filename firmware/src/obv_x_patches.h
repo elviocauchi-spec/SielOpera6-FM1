@@ -49,7 +49,7 @@ static void opera_x_factory_patch(patch_t *p, uint8_t index)
         p->v[P_O1_LVL] = 115u;
         p->v[P_O2_WAVE] = W_SUPERSAW;  /* supporting stereo detune bloom */
         p->v[P_O2_PW] = 44u;
-        p->v[P_O2_LVL] = 54u;
+        p->v[P_O2_LVL] = 62u; /* let the modulated stereo layer be heard */
         p->v[P_O2_SEMI] = 24u;
         p->v[P_O2_FINE] = 66u;
         p->v[P_CUTOFF] = 88u;     /* v0.16: enough room for envelope-LFO sweeps */
@@ -64,6 +64,8 @@ static void opera_x_factory_patch(patch_t *p, uint8_t index)
         p->v[P_LFO_RATE] = 48u;
         p->v[P_LFO_PITCH] = 13u;
         p->v[P_LFO_FLT] = 25u;
+        p->v[P_LFO_PWM] = 74u; /* v0.17: visible chorus movement on SUP SAW */
+        p->v[P_LFO_PWM_TO] = TO_O2;
         p->v[P_LFO_DELAY] = 0u;
         p->v[P_VEL_FLT] = 65u;
         p->v[P_VEL_AMP] = 47u;
@@ -79,7 +81,7 @@ static void opera_x_factory_patch(patch_t *p, uint8_t index)
         p->v[P_O1_LVL] = 127u;
         p->v[P_O2_WAVE] = W_SUPERPULSE;
         p->v[P_O2_PW] = 58u;
-        p->v[P_O2_LVL] = 42u;
+        p->v[P_O2_LVL] = 60u; /* enough pulse excitation for audible PWM */
         p->v[P_O2_SEMI] = 36u;        /* upper-octave breath/harmonic sheen */
         p->v[P_O2_FINE] = 61u;
         p->v[P_NOISE] = 7u;           /* subtle breath */
@@ -94,7 +96,7 @@ static void opera_x_factory_patch(patch_t *p, uint8_t index)
         p->v[P_LFO_SHAPE] = L_TRI;
         p->v[P_LFO_RATE] = 43u;
         p->v[P_LFO_PITCH] = 11u;
-        p->v[P_LFO_PWM] = 43u;
+        p->v[P_LFO_PWM] = 83u; /* vocal pulse moving through ±16% duty */
         p->v[P_LFO_PWM_TO] = TO_O2;
         p->v[P_LFO_FLT] = 12u;
         p->v[P_VEL_AMP] = 53u;
