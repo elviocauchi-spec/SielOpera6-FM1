@@ -48,15 +48,36 @@ static inline void opera_x_route_set(uint8_t *v, uint32_t dest, uint8_t value)
     v[opera_x_route_slot(v, dest)] = value <= 127u ? value : 127u;
 }
 
-/* Filter envelope amount is a bipolar amount centered on 64 in the
- * existing engine; modulate its depth, NOT envelope ADSR times.
- * At knob 127: +/-24 control steps, about +/-36 semitones at full FENV.
- * At 0: exactly the original source value. LFO range: Q15. */
+/* Filter-envelope intensity modulation that REMAINS audible in a pad.
+ *
+ * Original v0.15 applied a symmetric +/-24 amount swing, much of which
+ * disappeared when a pad's filter was already near the top of its range.
+ * v0.16 uses a deliberately asymmetric musical response:
+ *   positive half-cycle: brighten by up to +12 ENV AMT steps;
+ *   negative half-cycle: darken by up to -56 ENV AMT steps.
+ *
+ * Both are relative to the existing bipolar ENV AMT setting (center 64).
+ * Depth 0 or LFO 0 is BIT-EXACTLY the original amount, preserving LFO delay
+ * and legacy presets. The envelope (ADSR) still gates the entire effect:
+ * when the filter envelope is at zero, this route does NOTHING, unlike
+ * the separate direct FILTER cutoff LFO destination.
+ *
+ * All math is safe 32-bit and evaluated ONCE PER 16-FRAME CONTROL BLOCK.
+ * Round to nearest to avoid a coarse low-end dead zone. Saturation avoids
+ * filter-envelope amount wrapping or invalid negative parameter bytes.
+ */
 static inline int32_t opera_x_lfo_env_amount(int32_t base, int32_t lfo, uint8_t depth)
 {
-    int32_t change = (lfo * (int32_t)depth * 24) >> 22;
-    int32_t amt = base + change;
-    return amt < -64 ? -64 : amt > 63 ? 63 : amt;
+    int32_t delta, value;
+    if (!depth || !lfo) return base;
+    if (lfo > 32767) lfo = 32767;
+    if (lfo < -32768) lfo = -32768;
+    if (lfo >= 0)
+        delta = ((lfo * (int32_t)depth * 12) + (1 << 21)) >> 22;
+    else
+        delta = -((((-lfo) * (int32_t)depth * 56) + (1 << 21)) >> 22);
+    value = base + delta;
+    return value < -64 ? -64 : value > 63 ? 63 : value;
 }
 
 /* A note's editable LFO can move the oscillator's spectral position.
