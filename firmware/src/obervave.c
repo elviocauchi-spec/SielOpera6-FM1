@@ -22,6 +22,7 @@ static void app_idle(void);
 #include "obv_x_waves.h"            /* Opera X: sine, triangle, three-voice wide waves */
 #include "obv_x_tables.h"           /* Opera X v0.12: harmonic/formant morphing spectra */
 #include "obv_x_motion.h"           /* Opera X v0.10: independent tone motion and stereo width */
+#include "obv_x_formants.h"         /* Opera X v0.14: absolute-frequency vowel resonances */
 #include "obv_x_drive.h"            /* Opera X: correctly staged parallel stereo drive */
 #include "obv_fx.h"
 #include "obv_engine.h"
