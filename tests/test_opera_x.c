@@ -8,6 +8,7 @@
 #include "obv_dsp.h"
 #include "obv_params.h"
 #include "obv_x_waves.h"
+#include "obv_x_tables.h"
 #include "obv_x_motion.h"
 #include "obv_x_drive.h"
 #include "obv_x_patches.h"
@@ -33,13 +34,14 @@ int main(void)
     patch_t patch;
     unsigned i, j;
     static const char *const expected[4] = {
-        "X CLOUDPAD", "X SILKSTR", "X HOTLEAD", "X DEEPBASS"
+        "X AURORA", "X VOXSCAPE", "X HOTLEAD", "X DEEPBASS"
     };
 
     /* Original Opera 6 ROM wave codes remain bit-for-bit unchanged. */
     assert(W_OFF == 0 && W_SAW == 1 && W_PLS == 2 && W_BOTH == 3);
     assert(W_SINE == 4 && W_TRI == 5 && W_SUPERSAW == 6 && W_SUPERPULSE == 7);
-    assert(PDEF[P_O1_WAVE].max == 7 && PDEF[P_O2_WAVE].max == 7);
+    assert(W_SPECTRAL == 8 && W_VOX == 9);
+    assert(PDEF[P_O1_WAVE].max == 9 && PDEF[P_O2_WAVE].max == 9);
 
     /* Signed, linearly interpolated basic waves at exact quarter phases. */
     assert(opera_x_sine(0u) == 0);
@@ -123,6 +125,46 @@ int main(void)
     patch_defaults(&patch);
     assert(opera_x_note_pan(patch.v, -45) == -45); /* legacy stereo unchanged */
 
+    /* Each spectral family must change harmonic content as MORPH moves;
+     * the two families must not be near-identical analog waveforms. */
+    {
+        uint32_t j;
+        uint64_t distance0 = 0, distance1 = 0, between = 0;
+        int64_t sum0 = 0, sum1 = 0;
+        osc_t osc = {0};
+        uint32_t inc = 0x01800000u; /* low-mid register, full 32 harmonics */
+        for (j = 0; j < 256u; ++j) {
+            uint32_t ph = j << 24;
+            int32_t a0 = opera_x_wt_lookup(ph, inc, 0u, 0u);
+            int32_t a1 = opera_x_wt_lookup(ph, inc, 127u, 0u);
+            int32_t b0 = opera_x_wt_lookup(ph, inc, 0u, 1u);
+            int32_t b1 = opera_x_wt_lookup(ph, inc, 127u, 1u);
+            int32_t d0 = a0 - a1, d1 = b0 - b1, db = a0 - b0;
+            assert(a0 >= -30000 && a0 <= 30000);
+            assert(a1 >= -30000 && a1 <= 30000);
+            assert(b0 >= -30000 && b0 <= 30000);
+            assert(b1 >= -30000 && b1 <= 30000);
+            distance0 += d0 < 0 ? -(int64_t)d0 : d0;
+            distance1 += d1 < 0 ? -(int64_t)d1 : d1;
+            between += db < 0 ? -(int64_t)db : db;
+            sum0 += a0 < 0 ? -(int64_t)a0 : a0;
+            sum1 += b0 < 0 ? -(int64_t)b0 : b0;
+        }
+        assert(distance0 / 256u > 4000u); /* warm -> glass is a real change */
+        assert(distance1 / 256u > 3000u); /* rounded -> vowel is a real change */
+        assert(between / 256u > 3000u);   /* spectral != vocal family */
+        assert(sum0 > 1000000 && sum1 > 1000000);
+        assert(opera_x_wt_band(0u) == 0u);
+        assert(opera_x_wt_band(0xffffffffu) == 4u);
+        assert(opera_x_wt_morph(64u, 32767, 32767, 118u) > 110u);
+        assert(opera_x_wt_morph(64u, -32768, -32768, 118u) < 16u);
+        assert(opera_x_timbre_inc(60u) > opera_x_motion_inc(60u));
+        for (j = 0; j < 512u; ++j) {
+            int32_t y = opera_x_wt_step(&osc, inc, 80u, 1u, -1);
+            assert(y >= -30000 && y <= 30000);
+        }
+    }
+
     /* Each free slot has a meaningful and playable musical sound. */
     for (i = 0; i < 4u; ++i) {
         opera_x_factory_patch(&patch, (uint8_t)i);
@@ -143,22 +185,24 @@ int main(void)
             assert(opera_x_note_pan(patch.v, -60) == 0);
             assert(opera_x_note_pan(patch.v, 40) == 0);
             assert(patch.v[OX_RATE] >= 50u);
-            assert(patch.v[OX_TONE] >= 60u);
+            assert(patch.v[OX_TONE] >= 110u);
         } else {
             assert(opera_x_note_pan(patch.v, 40) == 40); /* mono stays mono */
         }
     }
     opera_x_factory_patch(&patch, 0u);
-    assert(patch.v[P_O1_WAVE] == W_SUPERSAW);
-    assert(patch.v[P_LFO_FLT] >= 45u && patch.v[P_LFO_RATE] >= 50u);
-    assert(patch.v[P_LFO_PITCH] >= 12u); /* old setting 4 quantized to zero */
+    assert(patch.v[P_O1_WAVE] == W_SPECTRAL);
+    assert(patch.v[P_O2_WAVE] == W_SUPERSAW);
+    assert(patch.v[OX_TONE] >= 110u); /* near full-spectrum timbral movement */
+    assert(patch.v[P_O1_PW] > 0u && patch.v[P_O1_PW] < 127u); /* editable MORPH */
     opera_x_factory_patch(&patch, 1u);
-    assert(patch.v[P_O1_WAVE] == W_SUPERPULSE);
-    assert(patch.v[P_LFO_PWM] >= 70u && patch.v[P_LFO_FLT] >= 30u);
+    assert(patch.v[P_O1_WAVE] == W_VOX);
+    assert(patch.v[P_O2_WAVE] == W_SUPERPULSE);
+    assert(patch.v[OX_TONE] >= 110u);
     opera_x_factory_patch(&patch, 2u);
     assert(patch.v[P_MODE] == M_MONO);
     opera_x_factory_patch(&patch, 3u);
     assert(patch.v[P_O1_WAVE] == W_SINE);
-    puts("OPERA X: stereo, dual-speed modulation, DRIVE and four musical previews pass");
+    puts("OPERA X: true spectral/formant morph, stereo, LFO, DRIVE and musical programs pass");
     return 0;
 }
