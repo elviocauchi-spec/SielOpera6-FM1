@@ -64,9 +64,25 @@ static inline int32_t opera_x_side_smooth(int32_t previous, int32_t next)
 /* A second, harmonically related but phase-offset motion source drives
  * oscillator balance and beating, independently of the filter's slow arc.
  * No new oscillator or audio-rate DSP: evaluated once per 16 frames. */
-static inline int32_t opera_x_timbre_motion(uint32_t slow_phase)
+static inline uint32_t opera_x_timbre_inc(uint8_t rate)
 {
-    return opera_x_motion(slow_phase * 2u + 0x60000000u);
+    /* Pitch-independent, different frequency from the filter modulation.
+     * Interval 18 in the exponential LFO table gives a non-integer ratio. */
+    uint32_t fast = (uint32_t)rate + 18u;
+    return opera_x_motion_inc((uint8_t)(fast > 127u ? 127u : fast));
+}
+static inline int32_t opera_x_timbre_motion(uint32_t independent_phase)
+{
+    return opera_x_motion(independent_phase + 0x60000000u);
+}
+/* Oscillator PW knob remains manually useful as base spectral morph;
+ * the independent timbre source sweeps it while the slow filter LFO
+ * prevents too-regular a repetitive triangle sweep. */
+static inline uint8_t opera_x_wt_morph(uint8_t base, int32_t timbre, int32_t slow, uint8_t depth)
+{
+    int32_t mod = (timbre * 3 + slow) >> 2;
+    int32_t value = (int32_t)base + ((mod * (int32_t)depth) >> 16);
+    return (uint8_t)(value < 0 ? 0 : value > 127 ? 127 : value);
 }
 /* Detune width changes by up to +/-depth/4, never leaving 0..127. */
 static inline uint8_t opera_x_animated_detune(uint8_t base, int32_t motion, uint8_t depth)
