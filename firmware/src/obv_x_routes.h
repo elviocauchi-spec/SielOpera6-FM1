@@ -19,6 +19,7 @@
 #define OBV_X_ROUTES_H
 #define OX_ROUTE_TAG_AT (PATCH_BYTES - 7u) /* 73 */
 #define OX_ROUTE_TAG 0xC5u
+#define OX_ENV_MORPH_TAG 0xC6u /* v0.18: new ENV>MORPH mode opt-in */
 
 enum { OX_TO_ENV_AMT = 0, OX_TO_MORPH = 1 };
 
@@ -30,13 +31,17 @@ static inline uint32_t opera_x_route_slot(const uint8_t *v, uint32_t dest)
 static inline uint8_t opera_x_route_get(const uint8_t *v, uint32_t dest)
 {
     uint8_t raw;
-    if (v[OX_ROUTE_TAG_AT] != OX_ROUTE_TAG) return 0u;
+    /* New v0.18 patches use 0xC6. Both tags share the exact same
+     * LFO route storage so no user-saved LFO+ depth gets lost. */
+    if (v[OX_ROUTE_TAG_AT] != OX_ROUTE_TAG &&
+        v[OX_ROUTE_TAG_AT] != OX_ENV_MORPH_TAG) return 0u;
     raw = v[opera_x_route_slot(v, dest)];
     return raw <= 127u ? raw : 0u;
 }
 static inline void opera_x_route_set(uint8_t *v, uint32_t dest, uint8_t value)
 {
-    if (v[OX_ROUTE_TAG_AT] != OX_ROUTE_TAG) {
+    if (v[OX_ROUTE_TAG_AT] != OX_ROUTE_TAG &&
+        v[OX_ROUTE_TAG_AT] != OX_ENV_MORPH_TAG) {
         uint32_t a = opera_x_route_slot(v, OX_TO_ENV_AMT);
         uint32_t b = opera_x_route_slot(v, OX_TO_MORPH);
         /* Validate where the patch stores its SIEL footage BEFORE
