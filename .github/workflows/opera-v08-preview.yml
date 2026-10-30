@@ -1,7 +1,7 @@
-name: Build Opera X v0.15 editable LFO destinations + vowel formants firmware
+name: Build Opera X v0.16 ENV AMT breathing-sweep firmware
 on:
   push:
-    branches: [opera-x-v015-lfo-routes]
+    branches: [opera-x-v016-env-sweep]
     paths:
       - 'firmware/src/siel_factory_*.h'
       - 'firmware/src/obervave.c'
@@ -63,12 +63,12 @@ jobs:
             fi
           done
           test -f "$HOME/fw-AC79_AIoT_SDK/cpu/wl82/tools/uboot.boot"
-      - name: Build Opera X v0.15 modulation FM1 preview
+      - name: Build Opera X v0.16 ENV SWEEP FM1 preview
         run: BOARD=fm1 sh build.sh
       - name: Verify firmware
         run: test -s build/obervave.fwsc
       - uses: actions/upload-artifact@v4
         with:
-          name: OPERA-X-v0.15-LFO-MORPH-ENV-FORMANTS-PREVIEW
+          name: OPERA-X-v0.16-ENV-SWEEP-PREVIEW
           path: build/obervave.fwsc
           if-no-files-found: error
