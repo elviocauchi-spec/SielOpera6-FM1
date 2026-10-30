@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* OPERA X v0.13 full-range morphing UI: keep the proven screen renderer and compact
+/* OPERA X v0.15 LFO modulation UI: keep the proven screen renderer and compact
  * panel identity, while keeping the existing 240x240 FM1 page and control
  * structure. No changes to synthesis, factory bytes, or MIDI handling.
  * A red LED program number, four anti-aliased knobs, scope and voice LEDs. 240 x 240:
@@ -549,7 +549,7 @@ static void splash_frame(uint32_t fade, int32_t x_to, uint32_t sub)
         if (++x == SPLASH_W) { x = 0; y++; }
     }
     if (sub) {                                      /* the line under the logo, as in assets/logo.png, in two rows */
-        const char *t1 = "OPERA X / FM1", *t2 = "MORPH v0.13";
+        const char *t1 = "OPERA X / FM1", *t2 = "LFO MOD v0.15";
         uint16_t c = sub >= 256u ? C_AMBER : blend565(C_PANEL, C_AMBER, sub);
         cv_text((240 - text_w(&FONT_S, t1)) / 2, SPLASH_H + 14, &FONT_S, t1, c);
         cv_text((240 - text_w(&FONT_S, t2)) / 2, SPLASH_H + 28, &FONT_S, t2, c);
