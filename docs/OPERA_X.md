@@ -663,3 +663,109 @@ zero-envelope bypass, neutral route bypass, monotonically increasing
 ADSR positions, 95/96 factory defaults, unmarked SIEL bypass, waveform
 difference and correlated VOX formant movement. Actual listening and
 physical hardware CPU performance remain unverified.
+
+## Opera X v0.19 — selectable effects order (wet-cascade routing)
+
+The user asked for the ability to change the effects order, particularly
+**delay into reverb** and **reverb into delay**. The existing FM1 effects
+are originally independent *parallel mixer sends*; this version adds
+two musical, one-way wet-cascade modes without tearing down the existing
+delay, reverb or chorus memories.
+
+### On-device control
+
+On the regular **CHORUS** page, use **knob 4: FX ROUTE**.
+
+| FX ROUTE | Signal graph | Musical result |
+| --- | --- | --- |
+| **PARALLEL** (default) | Dry + chorus + independent delay + independent reverb | Exactly the original v0.18 routing, no cascaded wet feed |
+| **DLY>REV** | Delay's wet output feeds reverb; original direct delay/reverb sends continue | Repeats gradually bloom into reverb / smear into a shared atmosphere |
+| **REV>DLY** | Reverb's wet output feeds ping-pong delay; original sends continue | Distinct echoes of the reverb tail, useful for atmospheric rhythmic textures |
+
+This is **wet-cascade effects routing, not 100% serial inserts**. The
+unaffected dry synth is always present; both effects keep their own wet
+returns. The crossfeed is the stereo wet signal's mono average scaled by
+the first effect's existing MIX knob, combined with the second effect's
+existing send with saturation for stable headroom. The first effect's
+feedback is never fed back from the second effect, eliminating unwanted
+delay/reverb loops. Chorus stays parallel; DRIVE and MASTER processing
+stay after the three time effects.
+
+**To hear the difference:** Both delay MIX and reverb MIX must be
+nonzero. On the mixer SEND pages, make sure at least one playing track
+sends audio to the effect placed **first**. To test the cascade cleanly,
+start with a send to only the first effect and leave the other send at
+zero; the second effect still receives the first effect's wet output
+through the new route. Then increase the second effect's own direct send
+if you want blended or more complicated spaces.
+
+### Persistence and compatibility
+
+The FM1's saved global settings and per-pattern snapshots are
+**exact-size flash formats**. Adding a field to either would break
+existing stored songs. v0.19 therefore stores the FX ROUTE setting in
+two spare bits of the existing **DRIVE TYPE** byte:
+
+- Bits 0–1: original four DRIVE types, unaffected
+- Bits 2–3: three effects routings, default 0 = PARALLEL
+- Both the DRIVE editor and the FX ROUTE editor preserve the other's
+  bits, including when recalled from pattern snapshots
+- Original v0.18 firmware ignores the spare bits through its
+  modulo-NDV drive decoder, so re-installing it still uses the
+  intended DRIVE type, though it does not reproduce the FX routing
+- No changes to the 80-byte patch format, MIDI CC IDs, pattern snapshot
+  size, saved settings size, or ROM factory SIEL programs 00–94
+
+Pattern playback can recall this routing because its saved mixer
+snapshot already includes DRIVE TYPE. **The routing is shared by all
+tracks** (like chorus/delay/reverb itself), rather than per oscillator
+or per synth program. If a pattern has never captured its own mixer
+snapshot, it keeps the global setting, as before.
+
+### Audio and performance details
+
+Reverb renders *before* delay in REV>DLY; delay renders *before* reverb
+in DLY>REV. Each effect executes its core DSP only **once per sample**,
+with only a handful of extra integer operations to mix the wet feed.
+There are **no new delay lines or reverb tanks** and no extra
+time-domain buffers. Existing tail states survive when the routing is
+changed. The final output still goes through the existing limiter.
+
+Host integration tests run the *actual* FM1 ping-pong and Dattorro tank,
+verifying that:
+- Delay-only inputs produce a distinctly different reverb-fed output
+  in DLY>REV and are unchanged in REV>DLY.
+- Reverb-only inputs produce delayed tails in REV>DLY and are
+  unchanged in DLY>REV.
+- Independent parallel audio remains unchanged in the corresponding
+  unrelated-send test.
+- Invalid routing encodings safely default to PARALLEL, extreme
+  crossfeeds clamp and never wrap, and all DRIVE types retain their
+  identity through route editing.
+
+The last user-confirmed CPU budget figure was about 3200 us on the
+online emulator for v0.15; v0.18 was listened to and praised, but
+no updated timing has yet been supplied. Target <=4000 us peak
+against the approximately 5800-us audio half-buffer deadline,
+especially in a six-note polyphonic chord with all effects active.
+The hardware worst-case CPU headroom still needs direct measurement.
+
+### A/B listening checklist
+
+1. Load 95 **X AURORA** with a reasonably open filter envelope.
+   Set the DELAY page's MIX to ~60% and REVERB page's MIX to ~60%;
+   ensure mixer SEND DELAY and SEND REVERB are not accidentally zero.
+2. On CHORUS knob 4 switch between **PARALLEL** and **DLY>REV**.
+   Play a short note, release it, and listen to the delay repeats
+   turning into a diffuse wash.
+3. Switch to **REV>DLY** and listen for distinctive rhythmic
+   echoes of the room's existing tail.
+4. Sweep DRIVE TYPE and return to CHORUS: the selected FX routing
+   must persist. Change pattern and back to verify the saved mixer
+   snapshot restores routing correctly.
+5. On GLOBAL read the CPU render time under your usual six-note
+   chord plus chorus, delay, reverb and DRIVE.
+
+Retain v0.18 as the sound-quality baseline until this version is
+physically tested. The new routing has no effect when left at
+PARALLEL, so v0.19 is designed to remain backwards-compatible.
