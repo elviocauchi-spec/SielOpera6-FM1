@@ -104,6 +104,7 @@ typedef struct {
     const patch_t *p;
     uint32_t lfo_ph, lfo_rnd_a, lfo_rnd_b;
     uint32_t x_motion_ph;        /* independent motion, shared per part, separate from legacy LFO */
+    uint32_t x_timbre_ph;        /* v0.12 independent noninteger-ratio harmonic/formant LFO */
     int32_t x_motion_val;        /* v0.10 expressive motion */
     int32_t x_timbre_val;        /* v0.11: separate, faster, phase-shifted harmonic motion */
     int32_t lfo_val;                            /* this block, Q15 */
@@ -590,8 +591,9 @@ static void lfo_tick(part_t *g)
     /* Extra independent slow motion for marked Opera X patches only. */
     if (opera_x_expressive(g->p->v)) {
         g->x_motion_ph += opera_x_motion_inc(g->p->v[OX_RATE]);
+        g->x_timbre_ph += opera_x_timbre_inc(g->p->v[OX_RATE]);
         g->x_motion_val = opera_x_motion(g->x_motion_ph);
-        g->x_timbre_val = opera_x_timbre_motion(g->x_motion_ph);
+        g->x_timbre_val = opera_x_timbre_motion(g->x_timbre_ph);
     } else {
         g->x_motion_val = 0;
         g->x_timbre_val = 0;
@@ -742,6 +744,10 @@ static void voice_render(voice_t *v, int32_t *out)
     if (x_wide_gain) x_wide_gain += (x_wide_gain * g->x_motion_val) >> 18;
     uint32_t inc1_l = inc1, inc1_r = inc1, inc2_l = inc2, inc2_r = inc2;
     uint32_t width1 = g->p->v[P_O1_PW], width2 = g->p->v[P_O2_PW];
+    uint8_t morph1 = opera_x_wt_morph((uint8_t)width1, g->x_timbre_val,
+                                      g->x_motion_val, x_depth);
+    uint8_t morph2 = opera_x_wt_morph((uint8_t)width2, -g->x_timbre_val,
+                                      g->x_motion_val, x_depth);
     if (x_depth) {
         /* Two independently phased motions: filter opens over several
          * seconds while detune width and the harmonic layer move faster.
@@ -767,16 +773,20 @@ static void voice_render(voice_t *v, int32_t *out)
             ie = m < (int32_t)(inc1 >> 4) ? inc1 >> 4 : (uint32_t)m;
             d1 = ie >> 15;
         }
-        s1 = ww1 <= W_BOTH
-            ? osc_step(&v->o1, ie, d1, pw1, ww1, hw1, -1)
-            : opera_x_osc_sample(&v->o1, &v->x1_l, &v->x1_r,
-                                 ie, inc1_l, inc1_r, pw1, ww1, -1);
+        s1 = ww1 == W_SPECTRAL || ww1 == W_VOX
+            ? opera_x_wt_step(&v->o1, ie, morph1, ww1 == W_VOX, -1)
+            : ww1 <= W_BOTH
+                ? osc_step(&v->o1, ie, d1, pw1, ww1, hw1, -1)
+                : opera_x_osc_sample(&v->o1, &v->x1_l, &v->x1_r,
+                                     ie, inc1_l, inc1_r, pw1, ww1, -1);
         if (sy && v->o1.ph < ie && d1)
             rt = (int32_t)(v->o1.ph / d1);
-        s2 = ww2 <= W_BOTH
-            ? osc_step(&v->o2, inc2, d2, pw2, ww2, hw2, rt)
-            : opera_x_osc_sample(&v->o2, &v->x2_l, &v->x2_r,
-                                 inc2, inc2_l, inc2_r, pw2, ww2, rt);
+        s2 = ww2 == W_SPECTRAL || ww2 == W_VOX
+            ? opera_x_wt_step(&v->o2, inc2, morph2, ww2 == W_VOX, rt)
+            : ww2 <= W_BOTH
+                ? osc_step(&v->o2, inc2, d2, pw2, ww2, hw2, rt)
+                : opera_x_osc_sample(&v->o2, &v->x2_l, &v->x2_r,
+                                     inc2, inc2_l, inc2_r, pw2, ww2, rt);
         o2n = v->o2.prev;
         mix = s1 * l1 + s2 * l2;
         if (ln) mix += ((int32_t)(xorshift(&v->noise) >> 16) - 32768) * ln;
