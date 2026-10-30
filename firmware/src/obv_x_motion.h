@@ -49,4 +49,15 @@ static inline int32_t opera_x_width_gain(uint8_t width)
 {
     return (int32_t)width * 1150 / 127;  /* Q12, max ~28% */
 }
+
+/* Extract and gently low-pass the stereo side component. These are pure
+ * fixed-point operations, and can be tested with the host compiler. */
+static inline int32_t opera_x_side_pair(int32_t left, int32_t right, int32_t level)
+{
+    return ((left - right) * level) >> 8; /* assumes side oscillator <= +/-32768 */
+}
+static inline int32_t opera_x_side_smooth(int32_t previous, int32_t next)
+{
+    return previous + ((next - previous) >> 3);
+}
 #endif /* OBV_X_MOTION_H */
