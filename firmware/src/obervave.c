@@ -907,6 +907,15 @@ static void draw_page(void)
             scat(k[i].value, "%");
         } else if (p >= 0) {
             k[i].label = PDEF[p].name;
+            /* PWM acts as stereo detune-width modulation when its target
+             * is SUP SAW; on actual pulse waves it remains true PWM. */
+            if (p == P_LFO_PWM) {
+                const uint8_t *pv = ed_patch((uint32_t)p)->v;
+                uint32_t dest = pv[P_LFO_PWM_TO];
+                if ((dest != TO_O2 && pv[P_O1_WAVE] == W_SUPERSAW) ||
+                    (dest != TO_O1 && pv[P_O2_WAVE] == W_SUPERSAW))
+                    k[i].label = "PWM/WID";
+            }
             /* Opera X wide oscillators use PW as detune width (and pulse
              * shape on SUP PLS): give the knob a meaningful label. */
             if (p == P_O1_PW || p == P_O2_PW) {
