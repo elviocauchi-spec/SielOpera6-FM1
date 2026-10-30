@@ -589,6 +589,12 @@ existing **OSC MOD, knob 3**, called ENV>O2 on vintage patches, as
 
 This provides a useful new ADSR behavior without using another LFO or
 changing the parameter count, patch binary layout or MIDI mapping.
+A new opt-in marker `0xC6` at already-reserved patch byte 73 distinguishes
+the new behavior from v0.17's `0xC5` marker. Both keep the LFO routing
+values at the same addresses. **Saved v0.17 programs retain their old
+ENV>O2 pitch-envelope sounds by default.** Deliberately editing OSC MOD
+knob 3 in a spectral X patch activates ENV>MORPH for that sound. The new
+factory 95/96 programs have the marker automatically.
 
 **OSC MOD knob 3 response:**
 - Center **0** (raw value 64): off, exactly the v0.17 sound.
@@ -609,9 +615,10 @@ vowel formant peaks follow the *identical* per-voice final morph
 position, not just the wavetable's harmonics. This avoids conflicting
 movements that sound unlike actual formants.
 
-**Compatibility and performance:** the original 00–94 SIEL programs,
+**Compatibility and performance:** original 00–94 SIEL programs,
 all conventional waves, the previous PWM/WID improvements, stereo,
-DRIVE, user programs and saved patch layout remain untouched. When the
+DRIVE, **existing saved v0.17 program sounds**, and the 80-byte patch
+layout remain untouched. When the
 X patch uses the new mode, the old OSC2 pitch-envelope destination is
 suppressed, avoiding unintentionally playing an out-of-tune upper
 oscillator. There are no extra per-sample DSP operations; calculations
@@ -645,7 +652,13 @@ Factory test programs:
    audio half-buffer deadline is about 5800 us, and our target remains
    approximately 4000 us peak under stress *on actual FM1 hardware*.
 
-Software regression checks include exact endpoint reachability,
+**Downgrade note:** if you SAVE a new v0.18 ENV>MORPH patch
+and later reinstall v0.17, its older LFO route reader cannot recognize
+marker `0xC6`, so its LFO+ destination values may appear disabled.
+Keep your v0.17 saved patches intact for a fair A/B comparison.
+
+Software regression checks include explicit saved-v0.17 opt-out,
+preservation of the same LFO+ routing values, exact endpoint reachability,
 zero-envelope bypass, neutral route bypass, monotonically increasing
 ADSR positions, 95/96 factory defaults, unmarked SIEL bypass, waveform
 difference and correlated VOX formant movement. Actual listening and
