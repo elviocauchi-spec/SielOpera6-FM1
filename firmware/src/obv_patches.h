@@ -211,51 +211,55 @@ static const uint8_t PF_OP_KEYS[] = {P_MODE,M_POLY,P_O1_WAVE,W_PLS,P_O2_WAVE,W_S
  * Saved user programs still take precedence. Existing factory indices 1-70,
  * parameter numbering, patch size and flash layout are not changed.
  * Parameters are deliberately conservative for the FM-1's six-voice budget. */
+/* These audition sounds must have genuinely different timbres, not
+ * minor variations of one slow low-pass pad. All use one voice per held
+ * note to preserve the FM-1's six-voice A/B budget. */
 static const uint8_t PF_PAD_CELESTIAL[] = {
-    P_MODE, M_POLY, P_O1_WAVE, W_SAW, P_O1_LVL, 92,
-    P_O2_WAVE, W_BOTH, P_O2_LVL, 76, P_O2_SEMI, 24, P_O2_FINE, 69, P_O2_PW, 47,
-    P_FTYPE, F_LP24, P_CUTOFF, 51, P_RESO, 14, P_FENV_AMT, 82,
-    P_FA, 61, P_FD, 91, P_FS, 71, P_FR, 99,
-    P_AA, 71, P_AD, 86, P_AS, 112, P_AR, 100,
-    P_LFO_SHAPE, L_TRI, P_LFO_RATE, 26, P_LFO_PHASE, LP_SPREAD,
-    P_LFO_FLT, 43, P_LFO_PWM, 26, P_LFO_PITCH, 5,
-    P_VINTAGE, 21, P_SPREAD, 73, P_VOLUME, 107,
-    P_CHO_RATE, 28, P_CHO_DEPTH, 73, P_CHO_MIX, 47,
-    P_DLY_MIX, 14, P_REV_SIZE, 110, P_REV_DAMP, 49, P_REV_MIX, 84,
+    /* Bright, wide saw/ensemble cloud. */
+    P_MODE, M_POLY, P_ARP_MODE, A_OFF,
+    P_O1_WAVE, W_BOTH, P_O1_PW, 46, P_O1_LVL, 90,
+    P_O2_WAVE, W_SAW, P_O2_LVL, 80, P_O2_SEMI, 36, P_O2_FINE, 68,
+    P_FTYPE, F_LP12, P_CUTOFF, 88, P_RESO, 6, P_FENV_AMT, 72,
+    P_FA, 52, P_FD, 93, P_FS, 85, P_FR, 95,
+    P_AA, 58, P_AD, 82, P_AS, 112, P_AR, 96,
+    P_LFO_SHAPE, L_TRI, P_LFO_RATE, 36, P_LFO_PHASE, LP_SPREAD,
+    P_LFO_FLT, 23, P_LFO_PWM, 33, P_LFO_PITCH, 2,
+    P_VINTAGE, 12, P_SPREAD, 86, P_VOLUME, 100,
+    P_CHO_RATE, 30, P_CHO_DEPTH, 85, P_CHO_MIX, 55,
+    P_DLY_MIX, 10, P_REV_SIZE, 100, P_REV_DAMP, 43, P_REV_MIX, 58,
     255u
 };
 static const uint8_t PF_PAD_NIGHTTIDE[] = {
-    P_MODE, M_POLY, P_O1_WAVE, W_SAW, P_O1_LVL, 110,
-    P_O2_WAVE, W_PLS, P_O2_LVL, 79, P_O2_SEMI, 24, P_O2_FINE, 67, P_O2_PW, 69,
-    P_FTYPE, F_LP24, P_CUTOFF, 39, P_RESO, 11, P_FENV_AMT, 86,
-    P_FA, 71, P_FD, 84, P_FS, 66, P_FR, 105,
-    P_AA, 84, P_AD, 93, P_AS, 111, P_AR, 112,
-    P_LFO_SHAPE, L_TRI, P_LFO_RATE, 20, P_LFO_PHASE, LP_FREE,
-    P_LFO_FLT, 58, P_LFO_PWM, 23, P_LFO_PITCH, 3,
-    P_VINTAGE, 26, P_SPREAD, 68, P_VOLUME, 110,
-    P_CHO_RATE, 24, P_CHO_DEPTH, 75, P_CHO_MIX, 57,
-    P_DLY_MIX, 11, P_REV_SIZE, 119, P_REV_DAMP, 66, P_REV_MIX, 91,
+    /* Dark octave-below pulse drone, very slow bloom and warm bass. */
+    P_MODE, M_POLY, P_ARP_MODE, A_OFF,
+    P_O1_WAVE, W_PLS, P_O1_PW, 35, P_O1_LVL, 107,
+    P_O2_WAVE, W_SAW, P_O2_LVL, 69, P_O2_SEMI, 12, P_O2_FINE, 65,
+    P_FTYPE, F_LP24, P_CUTOFF, 43, P_RESO, 9, P_FENV_AMT, 78,
+    P_FA, 94, P_FD, 110, P_FS, 81, P_FR, 115,
+    P_AA, 90, P_AD, 100, P_AS, 118, P_AR, 111,
+    P_LFO_SHAPE, L_TRI, P_LFO_RATE, 18, P_LFO_PHASE, LP_FREE,
+    P_LFO_FLT, 47, P_LFO_PWM, 18, P_LFO_PITCH, 2,
+    P_VINTAGE, 25, P_SPREAD, 49, P_VOLUME, 114,
+    P_CHO_RATE, 21, P_CHO_DEPTH, 64, P_CHO_MIX, 38,
+    P_DLY_MIX, 6, P_REV_SIZE, 115, P_REV_DAMP, 75, P_REV_MIX, 74,
     255u
 };
 static const uint8_t PF_PAD_AURORA[] = {
-    P_MODE, M_POLY, P_O1_WAVE, W_PLS, P_O1_LVL, 90, P_O1_PW, 57,
-    P_O2_WAVE, W_SAW, P_O2_LVL, 77, P_O2_SEMI, 36, P_O2_FINE, 67,
-    P_FTYPE, F_LP24, P_CUTOFF, 59, P_RESO, 16, P_FENV_AMT, 77,
-    P_FA, 68, P_FD, 91, P_FS, 81, P_FR, 98,
-    P_AA, 73, P_AD, 100, P_AS, 105, P_AR, 102,
-    P_LFO_SHAPE, L_TRI, P_LFO_RATE, 36, P_LFO_PHASE, LP_SPREAD,
-    P_LFO_FLT, 37, P_LFO_PWM, 48, P_LFO_PITCH, 5,
-    P_VINTAGE, 19, P_SPREAD, 80, P_VOLUME, 105,
-    P_CHO_RATE, 35, P_CHO_DEPTH, 84, P_CHO_MIX, 60,
-    P_DLY_MIX, 24, P_REV_SIZE, 114, P_REV_DAMP, 42, P_REV_MIX, 82,
+    /* Glassy, resonant band-pass shimmer, octave-high overtones. */
+    P_MODE, M_POLY, P_ARP_MODE, A_OFF,
+    P_O1_WAVE, W_BOTH, P_O1_PW, 65, P_O1_LVL, 99,
+    P_O2_WAVE, W_PLS, P_O2_PW, 41, P_O2_LVL, 88, P_O2_SEMI, 36, P_O2_FINE, 67,
+    P_FTYPE, F_BP12, P_CUTOFF, 91, P_RESO, 29, P_FENV_AMT, 68,
+    P_FA, 50, P_FD, 85, P_FS, 88, P_FR, 99,
+    P_AA, 63, P_AD, 99, P_AS, 114, P_AR, 100,
+    P_LFO_SHAPE, L_TRI, P_LFO_RATE, 43, P_LFO_PHASE, LP_SPREAD,
+    P_LFO_FLT, 48, P_LFO_PWM, 62, P_LFO_PITCH, 4,
+    P_VINTAGE, 10, P_SPREAD, 102, P_VOLUME, 116,
+    P_CHO_RATE, 43, P_CHO_DEPTH, 90, P_CHO_MIX, 51,
+    P_DLY_MIX, 28, P_REV_SIZE, 121, P_REV_DAMP, 40, P_REV_MIX, 87,
     255u
 };
-/* Slow, breathy chord-follow layer. Never a pluck: hard transients in the
- * earlier SEQ DUST patch sounded like rhythmic clicks on the real FM-1.
- * 75 is roughly 170 ms attack, 95 ~830 ms release. */
-/* Noticeably more presence without changing the slow, smooth shape:
- * two oscillators remain below full gain, the filter stays low-pass,
- * no drive, no arp, 100+ ms amp attack and a long release. */
+/* Long, soft backing patch also auditionable as A (MIST FLOW). */
 static const uint8_t PF_PAD_MISTFLOW[] = {
     P_MODE, M_POLY, P_ARP_MODE, A_OFF,
     P_O1_WAVE, W_PLS, P_O1_PW, 55, P_O1_LVL, 94,
@@ -269,11 +273,95 @@ static const uint8_t PF_PAD_MISTFLOW[] = {
     P_VINTAGE, 18, P_SPREAD, 74, P_VOLUME, 114,
     255u
 };
+/* Further factory-audition pads occupy formerly INIT-only slots.
+ * They retain saved-program precedence outside the RAM-only PAD LAB preview. */
+static const uint8_t PF_PAD_SILKSTR[] = {
+    /* String-machine PWM: warm, close and steadily modulated. */
+    P_MODE, M_POLY, P_ARP_MODE, A_OFF,
+    P_O1_WAVE, W_PLS, P_O1_PW, 61, P_O1_LVL, 116,
+    P_O2_WAVE, W_PLS, P_O2_PW, 46, P_O2_LVL, 88, P_O2_SEMI, 24, P_O2_FINE, 72,
+    P_FTYPE, F_LP12, P_CUTOFF, 67, P_RESO, 3, P_FENV_AMT, 64,
+    P_FA, 67, P_FD, 90, P_FS, 100, P_FR, 99,
+    P_AA, 65, P_AD, 86, P_AS, 123, P_AR, 94,
+    P_LFO_SHAPE, L_TRI, P_LFO_RATE, 31, P_LFO_PHASE, LP_SPREAD,
+    P_LFO_PWM, 71, P_LFO_FLT, 10,
+    P_VINTAGE, 11, P_SPREAD, 110, P_VOLUME, 106,
+    P_CHO_RATE, 34, P_CHO_DEPTH, 97, P_CHO_MIX, 68,
+    P_DLY_MIX, 4, P_REV_MIX, 42, 255u
+};
+static const uint8_t PF_PAD_EMBER[] = {
+    /* Brassy, sweeping twin saws with a pronounced envelope crescendo. */
+    P_MODE, M_POLY, P_ARP_MODE, A_OFF,
+    P_O1_WAVE, W_SAW, P_O1_LVL, 115,
+    P_O2_WAVE, W_SAW, P_O2_LVL, 111, P_O2_SEMI, 24, P_O2_FINE, 74,
+    P_FTYPE, F_LP24, P_CUTOFF, 57, P_RESO, 17, P_FENV_AMT, 122,
+    P_FA, 67, P_FD, 95, P_FS, 49, P_FR, 92,
+    P_AA, 58, P_AD, 88, P_AS, 117, P_AR, 94,
+    P_LFO_SHAPE, L_TRI, P_LFO_RATE, 24, P_LFO_FLT, 16, P_LFO_PITCH, 3,
+    P_VINTAGE, 24, P_SPREAD, 68, P_VOLUME, 108,
+    P_CHO_MIX, 36, P_DLY_MIX, 10, P_REV_MIX, 56, 255u
+};
+static const uint8_t PF_PAD_GLASS[] = {
+    /* Bright, thin high-pass air with a gently changing upper octave. */
+    P_MODE, M_POLY, P_ARP_MODE, A_OFF,
+    P_O1_WAVE, W_BOTH, P_O1_PW, 49, P_O1_LVL, 118,
+    P_O2_WAVE, W_PLS, P_O2_PW, 39, P_O2_LVL, 95, P_O2_SEMI, 36, P_O2_FINE, 66,
+    P_FTYPE, F_HP12, P_CUTOFF, 71, P_RESO, 13, P_FENV_AMT, 64,
+    P_FA, 72, P_FD, 92, P_FS, 115, P_FR, 94,
+    P_AA, 72, P_AD, 88, P_AS, 120, P_AR, 98,
+    P_LFO_SHAPE, L_TRI, P_LFO_RATE, 28, P_LFO_PWM, 57, P_LFO_PITCH, 3,
+    P_SPREAD, 91, P_VOLUME, 116,
+    P_CHO_MIX, 48, P_DLY_MIX, 30, P_REV_SIZE, 118, P_REV_MIX, 86, 255u
+};
+static const uint8_t PF_PAD_DEEP[] = {
+    /* Sub-octave cavern, rounded and very dark. */
+    P_MODE, M_POLY, P_ARP_MODE, A_OFF,
+    P_O1_WAVE, W_SAW, P_O1_LVL, 86,
+    P_O2_WAVE, W_PLS, P_O2_PW, 60, P_O2_LVL, 119, P_O2_SEMI, 12, P_O2_FINE, 64,
+    P_FTYPE, F_LP24, P_CUTOFF, 37, P_RESO, 5, P_FENV_AMT, 77,
+    P_FA, 78, P_FD, 109, P_FS, 101, P_FR, 112,
+    P_AA, 80, P_AD, 100, P_AS, 118, P_AR, 110,
+    P_LFO_SHAPE, L_TRI, P_LFO_RATE, 16, P_LFO_FLT, 24, P_LFO_PITCH, 2,
+    P_VINTAGE, 20, P_SPREAD, 43, P_VOLUME, 117,
+    P_CHO_MIX, 25, P_DLY_MIX, 0, P_REV_SIZE, 123, P_REV_DAMP, 86, P_REV_MIX, 70, 255u
+};
+static const uint8_t PF_PAD_VOWEL[] = {
+    /* Nasal choir/formant-like band-pass voice with a slow wobble. */
+    P_MODE, M_POLY, P_ARP_MODE, A_OFF,
+    P_O1_WAVE, W_PLS, P_O1_PW, 47, P_O1_LVL, 126,
+    P_O2_WAVE, W_SAW, P_O2_LVL, 88, P_O2_SEMI, 24, P_O2_FINE, 70,
+    P_FTYPE, F_BP12, P_CUTOFF, 76, P_RESO, 38, P_FENV_AMT, 83,
+    P_FA, 73, P_FD, 92, P_FS, 87, P_FR, 98,
+    P_AA, 75, P_AD, 90, P_AS, 121, P_AR, 102,
+    P_LFO_SHAPE, L_TRI, P_LFO_RATE, 21, P_LFO_FLT, 54, P_LFO_PITCH, 0,
+    P_VINTAGE, 12, P_SPREAD, 61, P_VOLUME, 120,
+    P_CHO_MIX, 62, P_DLY_MIX, 12, P_REV_SIZE, 115, P_REV_MIX, 79, 255u
+};
+static const uint8_t PF_PAD_ORBIT[] = {
+    /* Wide moving dual pulse, richly animated PWM stereo wash. */
+    P_MODE, M_POLY, P_ARP_MODE, A_OFF,
+    P_O1_WAVE, W_PLS, P_O1_PW, 39, P_O1_LVL, 105,
+    P_O2_WAVE, W_PLS, P_O2_PW, 75, P_O2_LVL, 108, P_O2_SEMI, 24, P_O2_FINE, 71,
+    P_FTYPE, F_LP12, P_CUTOFF, 74, P_RESO, 15, P_FENV_AMT, 64,
+    P_FA, 64, P_FD, 91, P_FS, 104, P_FR, 103,
+    P_AA, 66, P_AD, 91, P_AS, 125, P_AR, 106,
+    P_LFO_SHAPE, L_TRI, P_LFO_RATE, 49, P_LFO_PHASE, LP_SPREAD,
+    P_LFO_PWM, 97, P_LFO_FLT, 30, P_LFO_PITCH, 1,
+    P_VINTAGE, 11, P_SPREAD, 126, P_VOLUME, 105,
+    P_CHO_RATE, 45, P_CHO_DEPTH, 93, P_CHO_MIX, 55,
+    P_DLY_MIX, 16, P_REV_MIX, 62, 255u
+};
 static const factory_t FACT_PAD_LAB[] = {
     {"CELESTIAL", PF_PAD_CELESTIAL},
     {"NIGHTTIDE", PF_PAD_NIGHTTIDE},
     {"AURORA", PF_PAD_AURORA},
     {"MIST FLOW", PF_PAD_MISTFLOW},
+    {"SILK STR", PF_PAD_SILKSTR},
+    {"EMBERWAVE", PF_PAD_EMBER},
+    {"GLASS SEA", PF_PAD_GLASS},
+    {"DEEP FIELD", PF_PAD_DEEP},
+    {"VOWEL PAD", PF_PAD_VOWEL},
+    {"ORBIT PWM", PF_PAD_ORBIT},
 };
 #define NPAD_LAB (sizeof FACT_PAD_LAB / sizeof FACT_PAD_LAB[0])
 
