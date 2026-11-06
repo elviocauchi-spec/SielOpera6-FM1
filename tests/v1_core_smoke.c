@@ -128,6 +128,32 @@ int main(void) {
            "ordered ARP must follow held note order",13);
     v1_hold(&engine,0,67,0);v1_hold(&engine,0,60,0);v1_hold(&engine,0,64,0);
     VERIFY(engine.held_count==0 && !engine.arp_active,"ARP stopped with no held notes",14);
-    puts("Vanguard 1 DSP PASS: 31 waves, 13 filters, stereo FAT, VELTRK, PAN, dual Trancegate, ordered arp");
+    /* Vanguard GLIDE switches to single-note legato, moving smoothly between
+       held notes at the tempo-synced rate. There must not be a new poly voice. */
+    p=init_patch();p.vg_glide.on=1;p.vg_glide.speed.denominator=16;
+    v1_engine_init(&engine,&p);
+    v1_hold(&engine,1,60,100);
+    render_energy(2048,-1);
+    v1_hold(&engine,1,64,100);
+    VERIFY(engine.voices[0].note==64 &&
+           engine.glide_current_q16==(60<<16) &&
+           engine.glide_target_q16==(64<<16),"GLIDE new legato note",15);
+    render_energy(2048,-1);
+    VERIFY(engine.glide_current_q16>(60<<16) &&
+           engine.glide_current_q16<(64<<16),"GLIDE must interpolate pitch",16);
+    for(i=1;i<V1_VOICES;i++)active+=engine.voices[i].active;
+    VERIFY(!active,"GLIDE must be monophonic",17);
+    v1_hold(&engine,0,64,0);
+    VERIFY(engine.voices[0].note==60,"GLIDE must return to held note",18);
+    v1_hold(&engine,0,60,0);
+
+    /* MIDI CC7 + CC11 are separate multipliers, not changes to AMP LEVEL. */
+    p=init_patch();v1_engine_init(&engine,&p);v1_hold(&engine,1,60,100);
+    a=render_energy(2048,-1);
+    v1_engine_init(&engine,&p);engine.midi_volume=63;v1_hold(&engine,1,60,100);
+    b=render_energy(2048,-1);
+    VERIFY(a>b*2u,"MIDI CC7 output volume should attenuate",19);
+
+    puts("Vanguard 1 DSP PASS: 31 waves, 13 filters, stereo FAT, VELTRK, PAN, Trancegate, ordered arp, glide, MIDI gain");
     return 0;
 }
