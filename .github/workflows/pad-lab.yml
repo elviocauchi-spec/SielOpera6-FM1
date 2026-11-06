@@ -20,6 +20,8 @@ jobs:
           set -eu
           cc -std=c11 -O2 -Wall -Wextra -Werror tests/pad_chord_test.c -o /tmp/pad-chord-test
           /tmp/pad-chord-test
+      - name: Verify smooth, metronome-free pad audition
+        run: python3 tests/pad_lab_audition_test.py
       - name: Check patch and UI source invariants
         shell: python
         run: |
