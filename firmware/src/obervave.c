@@ -21,12 +21,13 @@ static void app_idle(void);
 #include "obv_params.h"
 #include "obv_fx.h"
 #include "obv_engine.h"
-#include "pad_chord.h"
+#include "pad_keys.h"
 /* Preview stays RAM-only: no flash patch/sequence format changes. */
 /* B is deliberately prominent enough to hear under the pad.
  * The mixer squares level: 112 is ~1.25x unity versus 80 being 0.64x. */
 #define PAD_DEMO_B_LEVEL 112u
 static uint32_t pad_demo_active, pad_demo_b_level = PAD_DEMO_B_LEVEL;
+static uint32_t pad_demo_a_prog = 70u;
 #include "obv_seq.h"
 #include "obv_patches.h"
 
@@ -244,7 +245,7 @@ static void play_note(uint32_t on, uint32_t note, uint32_t vel)
 {
     note &= 127u;
     if (on) note_part[note] = (uint8_t)(seq_trk % NTRK);
-    if (note_part[note] == 0u) pad_chord_event(on, note);
+    if (note_part[note] == 0u) pad_keys_event(on, note);
     note_event_p(note_part[note], on, note, vel);
 }
 static int rec_keys(void) { return !ed_patch(P_ARP_MODE)->v[P_ARP_MODE]; }   /* (feeding an arp: its notes are recorded) */
@@ -275,10 +276,10 @@ static void pad_demo_apply_mix(void)
 {
     if (!pad_demo_active) return;
     ctl_mix_off = 0xCu;      /* preview: only A and B are audible */
-    ctl_mix_lvl[0] = 100u;
+    /* NEVER touch A's level, pan or FX sends when adjusting B. The pad's
+     * current output balance belongs to A, not the backing page. */
     ctl_mix_lvl[1] = (uint8_t)pad_demo_b_level;
-    ctl_mix_pan[0] = ctl_mix_pan[1] = 0;
-    ctl_mix_cho[0] = ctl_mix_dly[0] = ctl_mix_rev[0] = 127u;
+    ctl_mix_pan[1] = 0;
     ctl_mix_cho[1] = 30u;
     ctl_mix_dly[1] = 35u;
     ctl_mix_rev[1] = 70u;
@@ -292,11 +293,12 @@ static void pad_demo_enter(void)
     pad_demo_saved_edited[0] = trk_edited[0];
     pad_demo_saved_edited[1] = trk_edited[1];
     patch_from_factory(&live_p[0], &FACT_PAD_LAB[0]); /* pad: CELESTIAL */
-    patch_from_factory(&live_p[1], &FACT_PAD_LAB[3]); /* backing: MIST FLOW, no percussive ticks */
+    patch_from_factory(&live_p[1], &FACT_PAD_LAB[3]); /* backing: MIST FLOW */
+    pad_demo_a_prog = 70u;
     pad_demo_b_level = PAD_DEMO_B_LEVEL;
     pad_demo_track.div = D_4;
-    pad_follow_enabled = 1u;
-    pad_follow_octave = 1;
+    pad_arp_enabled = 1u;
+    pad_arp_octave = 0; /* B duplicates ACTUAL notes, no harmonizer */
     pad_demo_active = 1u;
     seq_trk = 0u;           /* the keys play the pad on A */
     ctl_panic = 1u;
@@ -799,20 +801,21 @@ static void draw_header(void)
         param_value(v, P_CUTOFF, ed_patch(P_CUTOFF)->v[P_CUTOFF]);
         scat(tags, "CUTOFF ");
         scat(tags, v);
-        ui_header(pad_demo_active ? 70u : ed_prog(), ed_patch(0)->v + NPARAM, ed_edited(), tags, seq_trk);
+        ui_header(pad_demo_active ? pad_demo_a_prog : ed_prog(), ed_patch(0)->v + NPARAM, ed_edited(), tags, seq_trk);
         return;
     }
     if (page == PG_PERFORM || page == PG_BACKING) {
         if (pad_demo_active) scat(tags, "DEMO ");
-        static const char *const ROOT[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
-        if (pad_chord.valid) {
-            scat(tags, ROOT[pad_chord.root % 12u]);
-            scat(tags, pad_chord.third == 3u ? "m" : pad_chord.third == 2u ? "sus2" : pad_chord.third == 5u ? "sus4" : "maj");
-        } else scat(tags, pad_demo_active ? "3-NOTE CHORD" : "PLAY A CHORD");
-        if (pad_demo_active && pad_chord.valid) scat(tags, pad_follow_enabled ? " B:FOLLOW" : " B:FIXED");
-        else scat(tags, pad_follow_enabled ? "  FOLLOW" : "  FIXED");
+        if (pad_demo_active) {
+            char n[12];
+            fmt_u(n, pad_keys_held());
+            scat(tags, "ARP ");
+            scat(tags, n);
+            scat(tags, " KEYS ");
+            scat(tags, pad_arp_enabled ? "ON" : "OFF");
+        } else scat(tags, "SEQ");
         if (ctl_seq_run && !pad_demo_active) scat(tags, "  PLAY");
-        ui_header(pad_demo_active ? 70u : ed_prog(), ed_patch(0)->v + NPARAM, ed_edited(), tags, seq_trk);
+        ui_header(pad_demo_active ? pad_demo_a_prog : ed_prog(), ed_patch(0)->v + NPARAM, ed_edited(), tags, seq_trk);
         return;
     }
     {   /* short words; mode, filter, HOLD, SEQ and REC always (at most 23 characters: MONO NOTCH HOLD SEQ REC); then,
@@ -834,7 +837,7 @@ static void draw_header(void)
         if (ctl_seq_run) scat(tags, " SEQ");
         if (rec) scat(tags, " REC");
     }
-    ui_header(pad_demo_active ? 70u : ed_prog(), ed_patch(0)->v + NPARAM, ed_edited(), tags, seq_trk);
+    ui_header(pad_demo_active ? pad_demo_a_prog : ed_prog(), ed_patch(0)->v + NPARAM, ed_edited(), tags, seq_trk);
 }
 
 static void fmt_s(char *s, int32_t v)          /* signed: +3, -12, 0 */
@@ -911,12 +914,12 @@ static void draw_page(void)
         k[i].bip = 0;
         k[i].value[0] = 0;
         if (page == PG_BACKING && !layer) {
-            static const char *const BL[4] = {"FOLLOW", "LEVEL", "SPEED", "OCTAVE"};
+            static const char *const BL[4] = {"B ARP", "B LEVEL", "SPEED", "OCTAVE"};
             k[i].label = BL[i]; k[i].present = 1;
-            if (i == 0u) { scat(k[i].value, pad_follow_enabled ? "ON" : "OFF"); k[i].v = pad_follow_enabled; k[i].max = 1; }
+            if (i == 0u) { scat(k[i].value, pad_arp_enabled ? "ON" : "OFF"); k[i].v = pad_arp_enabled; k[i].max = 1; }
             else if (i == 1u) { uint32_t vl = pad_demo_active ? pad_demo_b_level : set.mix_lvl[1]; fmt_u(k[i].value, vl); k[i].v = vl; k[i].max = 127; }
             else if (i == 2u) { uint32_t div = pad_demo_active ? pad_demo_track.div : pat.trk[1].div; scat(k[i].value, DIV_NAME[div % NDIV]); k[i].v = div % NDIV; k[i].max = NDIV - 1; }
-            else { fmt_s(k[i].value, pad_follow_octave); k[i].v = pad_follow_octave + 2; k[i].max = 4; }
+            else { fmt_s(k[i].value, pad_arp_octave); k[i].v = pad_arp_octave + 2; k[i].max = 4; }
         } else if (page == PG_MIXER && !layer) {      /* the mixer: A-D, the row LEVEL / PAN / SEND (F1 again: the next row) */
             static const char *const ML[NTRK] = {"A", "B", "C", "D"}, *const MM[4] = {"VOLUME", "FILTER", "DRIVE", "COMP"};
             uint32_t t = i;
@@ -1041,9 +1044,9 @@ static void draw_hints(void)
     else if (layer == L_GLO) ui_hints(rec ? "1-4: RECORD A-D  5-8: MUTE" : "1-4: START/STOP A-D 5-8: MUTE", "9-12: SOLO  G5: TAP TEMPO", C_AMBER);
     else if (layer == L_SAVE) ui_hints("WHITE 1-8: GO  BLACK 1-8: COPY", "+ " NM_SELBTN " PRESSED: NEW SOUND", C_AMBER);
     else if (layer == L_FX) ui_hints("KNOBS: CHORUS DELAY REVERB", "AND THE DELAY'S TIME", C_AMBER);
-    else if (pad_demo_active && page == PG_BACKING) ui_hints("SELECT: EXIT PAD DEMO", "LEVEL / SPEED / FOLLOW", C_AMBER);
-    else if (pad_demo_active) ui_hints("PLAY A THREE-NOTE CHORD", "BACKING FOLLOWS YOUR CHORD", C_CREAM);
-    else if (page == PG_BACKING) ui_hints("SELECT: ENTER PAD DEMO", "PRESETS: YOUR SAVED SOUNDS", C_AMBER);
+    else if (pad_demo_active && page == PG_BACKING) ui_hints("SELECT: EXIT PAD DEMO", "ARP / LEVEL / SPEED / OCT", C_AMBER);
+    else if (pad_demo_active) ui_hints("HOLD ANY NOTES FOR B ARP", "PRESETS: CHANGE A, KEEP B", C_CREAM);
+    else if (page == PG_BACKING) ui_hints("SELECT: ENTER PAD DEMO", "B ARPS YOUR ACTUAL NOTES", C_AMBER);
     else ui_hints(ROT[r][0], ROT[r][1], C_CREAM);
 }
 
@@ -1786,9 +1789,9 @@ static void note_in(uint32_t on, uint32_t note, uint32_t vel)
 {
     uint32_t t;
     note &= 127u;
-    { uint32_t last_chord = pad_chord.revision;
+    { uint32_t last_keys = pad_keys.revision;
       play_note(on, note, vel);
-      if (pad_chord.revision != last_chord) dirty_hdr = dirty_tags = 1;
+      if (pad_keys.revision != last_keys) dirty_hdr = dirty_tags = 1;
     }
     if (!on) for (t = 0; t < NTRK; t++) ctl_live_hold[t][note >> 5 & 3u] &= ~(1u << (note & 31u));   /* (let go: the sequencer's again) */
     if (rec_keys()) rec_note(on, note, vel);
@@ -2321,9 +2324,10 @@ static void app_main(void)
 
         /* encoders */
         if (pad_demo_active && (e = fm1_enc_take(ENC_PRESETS)) != 0) {
-            pad_demo_exit();
-            trk_load(seq_trk, (uint32_t)((int32_t)trk_prog[seq_trk] + e + (int32_t)NPROG * 4) % NPROG);
-            say("DEMO OFF: NORMAL PRESETS");
+            /* Keep B arpeggiating while browsing A's other sounds! No
+             * trk_load: it writes saved-song selection settings. */
+            pad_demo_a_prog = (uint32_t)((int32_t)pad_demo_a_prog + e + (int32_t)NPROG * 16) % NPROG;
+            prog_get(pad_demo_a_prog, &live_p[0]);
             dirty_hdr = dirty_page = dirty_tags = dirty_steps = 1;
         } else if ((e = fm1_enc_take(ENC_PRESETS)) != 0 && save_armed) {           /* SAVE armed: PRESETS picks the slot to save into ("save as") */
             save_to = (uint32_t)((int32_t)save_to + e + (int32_t)NPROG * 4) % NPROG;
@@ -2366,10 +2370,18 @@ static void app_main(void)
             if ((e = fm1_enc_take(ENC_KNOB1 + k)) == 0) continue;
             if (e > 1 || e < -1) e *= 3;        /* a fast turn goes further */
             if (page == PG_BACKING && !layer) {
-                if (k == 0u) pad_follow_enabled = (uint32_t)clampi((int32_t)pad_follow_enabled + (e > 0 ? 1 : -1), 0, 1);
-                else if (k == 1u) { if (pad_demo_active) { pad_demo_b_level = (uint32_t)clampi((int32_t)pad_demo_b_level + e, 0, 127); pad_demo_apply_mix(); } else { set.mix_lvl[1] = (uint8_t)clampi((int32_t)set.mix_lvl[1] + e, 0, 127); mix_apply(); set_dirty = 1; set_t = fm1_ms; } }
+                if (k == 0u) pad_arp_enabled = (uint32_t)clampi((int32_t)pad_arp_enabled + (e > 0 ? 1 : -1), 0, 1);
+                else if (k == 1u) {
+                    if (pad_demo_active) {
+                        pad_demo_b_level = (uint32_t)clampi((int32_t)pad_demo_b_level + e, 0, 127);
+                        ctl_mix_lvl[1] = (uint8_t)pad_demo_b_level; /* ONLY B; NEVER change A */
+                    } else {
+                        set.mix_lvl[1] = (uint8_t)clampi((int32_t)set.mix_lvl[1] + e, 0, 127);
+                        mix_apply(); set_dirty = 1; set_t = fm1_ms;
+                    }
+                }
                 else if (k == 2u) { if (pad_demo_active) pad_demo_track.div = (uint8_t)clampi((int32_t)pad_demo_track.div + (e > 0 ? 1 : -1), 0, NDIV - 1); else { pat.trk[1].div = (uint8_t)clampi((int32_t)pat.trk[1].div + (e > 0 ? 1 : -1), 0, NDIV - 1); pat_edited = 1; dirty_steps = 1; } }
-                else pad_follow_octave = clampi(pad_follow_octave + (e > 0 ? 1 : -1), -2, 2);
+                else pad_arp_octave = clampi(pad_arp_octave + (e > 0 ? 1 : -1), -2, 2);
                 dirty_page = dirty_hdr = 1;
             } else if (page == PG_MIXER && !layer) {  /* the mixer: track k's LEVEL / PAN / SEND */
                 if (mix_row == 6u) {            /* (VIBE) MASTER */
