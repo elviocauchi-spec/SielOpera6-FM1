@@ -35,12 +35,6 @@ typedef struct {
     v1_osc_patch_t osc[3];
     v1_adsr_patch_t amp, filter_env;
     uint8_t cutoff, resonance, filter_type;
-    int8_t filter_env_depth;
-    uint8_t lfo_rate[3], lfo_pitch, lfo_filter, lfo_amp;
-    uint8_t drive, chorus, delay, delay_feedback, reverb;
-    uint8_t arp_mode, arp_rate, arp_gate, arp_octaves;
-    uint16_t trance_mask; /* 16 genuinely editable steps; bit 0 is beat 1 */
-    uint8_t trance_enabled, trance_rate, trance_depth;
     uint8_t master;
     uint8_t voice_limit; /* zero denotes safe 8-voice initial setting */
     /* Original reFX Vanguard 1.6 parameter architecture, distinct from
@@ -360,7 +354,7 @@ static void v1_note_off(v1_engine_t *e,uint8_t note) {
 /* The 2006 plugin's ARP modes: up/down/alter/ordered/random, with a
  * separate ON switch. Keep an internal OFF value for MIDI event handling. */
 static uint32_t v1_arp_mode(const v1_patch_t *p) {
-    if(!p->vg_arp.on) return p->arp_mode;
+    if(!p->vg_arp.on) return V1_ARP_OFF;
     switch(p->vg_arp.mode) {
         case VG1_ARP_UP: return V1_ARP_UP;
         case VG1_ARP_DOWN: return V1_ARP_DOWN;
@@ -402,7 +396,7 @@ static void v1_arp_tick(v1_engine_t *e) {
     for(i=0;i<count;i++){sort[i]=e->held[i];vel[i]=e->held_velocity[i];}
     if(mode!=V1_ARP_PLAYED)
         for(i=1;i<count;i++){uint8_t sn=sort[i],sv=vel[i];j=i;while(j && sort[j-1]>sn){sort[j]=sort[j-1];vel[j]=vel[j-1];j--;}sort[j]=sn;vel[j]=sv;}
-    uint32_t octave_count=e->patch.vg_arp.on?e->patch.vg_arp.octaves:e->patch.arp_octaves;
+    uint32_t octave_count=e->patch.vg_arp.octaves;
     uint32_t n=count*(octave_count?octave_count:1u);
     if(mode==V1_ARP_DOWN) idx=n-1u-(e->arp_pos%n);
     else if(mode==V1_ARP_RANDOM) idx=v1_rand(&e->rng)%n;
@@ -417,28 +411,26 @@ static void v1_arp_tick(v1_engine_t *e) {
 }
 static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm) {
     const v1_patch_t *p=&e->patch;
-    uint32_t f,i,j,step_frames=v1_arp_step_frames(bpm,e->patch.arp_rate);
-    uint32_t gate_frames=v1_arp_step_frames(bpm,e->patch.trance_rate);
+    uint32_t f,i,j,step_frames=1u,gate_frames=1u;
     const uint32_t quarter=v1_quarter(e,bpm);
-    if(e->patch.vg_arp.on) step_frames=vg1_rate_samples(quarter,e->patch.vg_arp.speed);
-    if(e->patch.vg_gate.enabled)gate_frames=vg1_rate_samples(quarter,e->patch.vg_gate.speed);
-    uint32_t delay_frames=v1_quarter(e,bpm)*3u/4u;
+    if(p->vg_arp.on)step_frames=vg1_rate_samples(quarter,p->vg_arp.speed);
+    if(p->vg_gate.enabled)gate_frames=vg1_rate_samples(quarter,p->vg_gate.speed);
+    uint32_t delay_frames=1u;
     uint32_t lfo_inc[3],vi;
-    uint32_t arp_gate=p->vg_arp.on?p->vg_arp.gate:p->arp_gate;
+    uint32_t arp_gate=p->vg_arp.gate;
     uint32_t arp_release;
     int32_t bendc,vib_depthc;
-    if(e->patch.vg_delay.on) {
-        if(e->patch.vg_delay.type==VG1_DELAY_WIDEN)
-            delay_frames=220u*(e->patch.vg_delay.widen_ms?e->patch.vg_delay.widen_ms:80u);
-        else delay_frames=vg1_rate_samples(quarter,e->patch.vg_delay.speed);
+    if(p->vg_delay.on) {
+        if(p->vg_delay.type==VG1_DELAY_WIDEN)
+            delay_frames=44u*(p->vg_delay.widen_ms?p->vg_delay.widen_ms:50u);
+        else delay_frames=vg1_rate_samples(quarter,p->vg_delay.speed);
     }
     if(delay_frames>32767u) delay_frames=32767u;
     if(!delay_frames)delay_frames=1u;
     /* Block-derived control rates keep expensive integer division OUT of
        the 44.1kHz sample loop. The 256-frame ISR has ~5.8ms deadline. */
     for(vi=0;vi<3;vi++) {
-        uint32_t hz=p->vg_lfo[vi].speed?p->vg_lfo[vi].speed:
-                    (uint32_t)p->lfo_rate[vi]*60u/127u;
+        uint32_t hz=p->vg_lfo[vi].speed;
         lfo_inc[vi]=hz*97392u;
     }
     bendc=(e->bend14*(int32_t)p->bend_range*100)/8192;
@@ -458,12 +450,12 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         }
         if(e->gate_phase++>=gate_frames){e->gate_phase=1;e->gate_step=(e->gate_step+1u)&15u;}
         uint32_t stereo=p->vg_gate.enabled&&p->vg_gate.stereo;
-        uint32_t on=p->vg_gate.enabled?p->vg_gate.enabled:p->trance_enabled;
-        uint16_t mask_l=p->vg_gate.enabled?p->vg_gate.left:p->trance_mask;
+        uint32_t on=p->vg_gate.enabled;
+        uint16_t mask_l=p->vg_gate.left;
         uint16_t mask_r=stereo?p->vg_gate.right:mask_l;
         int32_t target=(!on || (mask_l&(1u<<e->gate_step)))?32767:0;
         int32_t target_r=(!on || (mask_r&(1u<<e->gate_step)))?32767:0;
-        uint32_t contour=p->vg_gate.enabled?p->vg_gate.contour:64u;
+        uint32_t contour=p->vg_gate.contour;
         uint32_t slew=2u+((127u-contour)>>2);
         e->gate_smooth+=(target-e->gate_smooth)/(int32_t)slew;
         e->gate_smooth_right+=(target_r-e->gate_smooth_right)/(int32_t)slew;
@@ -489,7 +481,6 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
                     int32_t cents=((int32_t)p->vg_lfo[oi].detune*e->lfo[oi])>>15;
                     cents+=(((int32_t)p->vg_env1.detune*v->a.level)>>15);
                     cents+=env_pitch*100+bendc+vibc+age_cents;
-                    if(!oi)cents+=((int32_t)p->lfo_pitch*e->lfo[0])>>16;
                     for(si=0;si<V1_SUPER;si++)
                         v->osc[oi].inc[si]=v1_detune_inc(v->osc[oi].base_inc[si],cents);
                 }
@@ -511,11 +502,9 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             cut=(int32_t)p->cutoff
                + (((int32_t)p->vg_env1.cutoff*amp)>>15)
                + (((int32_t)p->vg_env2.cutoff*fe)>>15)
-               + (((int32_t)p->filter_env_depth*fe)>>15)
                + ((int32_t)p->vg_keytrack.keytrk*((int32_t)v->note-60))/64
                + ((int32_t)p->vg_keytrack.veltrk*((int32_t)v->velocity-64))/64;
             for(j=0;j<3;j++)cut+=((int32_t)p->vg_lfo[j].cutoff*e->lfo[j])>>15;
-            cut+=((int32_t)p->lfo_filter*e->lfo[1]>>16);
             cut=v1_clip(cut,0,127);
             v1_svf_coef_t c,c2;
             if((e->frames&31u)==0u) {
@@ -561,7 +550,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
            each oscillator. ReFX 1.6 permits independent L/R gate patterns. */
         /* The original Vanguard has no chorus block. Remove the generic
            prototype chorus entirely. FAT/VCS provide stereo width instead. */
-        int32_t mix=p->vg_gate.enabled?p->vg_gate.mix:p->trance_depth;
+        int32_t mix=p->vg_gate.mix;
         int32_t gl=on?(32767-((int32_t)mix*(32767-e->gate_smooth)/127)):32767;
         int32_t gr=on?(32767-((int32_t)mix*(32767-e->gate_smooth_right)/127)):32767;
         left=(dryl*gl)>>15;
@@ -571,10 +560,10 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         uint32_t dl=e->delay_pos&32767u;
         int32_t oldl=e->delay_mem[0][(dl-delay_frames)&32767u];
         int32_t oldr=e->delay_mem[1][(dl-delay_frames)&32767u];
-        uint32_t dmode=p->vg_delay.on?p->vg_delay.type:VG1_DELAY_CROSS;
-        int32_t dfb=p->vg_delay.on?p->vg_delay.feedback:p->delay_feedback;
-        int32_t dmix=p->vg_delay.on?p->vg_delay.mix:p->delay;
-        int32_t damp=p->vg_delay.on?p->vg_delay.damp:0;
+        uint32_t dmode=p->vg_delay.type;
+        int32_t dfb=p->vg_delay.on?p->vg_delay.feedback:0;
+        int32_t dmix=p->vg_delay.on?p->vg_delay.mix:0;
+        int32_t damp=p->vg_delay.damp;
         e->delay_lp[0]+=(oldl-e->delay_lp[0])*(127-damp)/127;
         e->delay_lp[1]+=(oldr-e->delay_lp[1])*(127-damp)/127;
         oldl=e->delay_lp[0]; oldr=e->delay_lp[1];
@@ -598,7 +587,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         int32_t room=p->vg_reverb.on?p->vg_reverb.room_size:64;
         int32_t rdamp=p->vg_reverb.on?p->vg_reverb.damp:32;
         int32_t rwidth=p->vg_reverb.on?p->vg_reverb.width:127;
-        int32_t rmix=p->vg_reverb.on?p->vg_reverb.mix:p->reverb;
+        int32_t rmix=p->vg_reverb.on?p->vg_reverb.mix:0;
         int32_t rev_in=(left+right)>>2;
         int32_t wetl=0,wetr=0;
         uint32_t rp=e->reverb_pos&2047u;
