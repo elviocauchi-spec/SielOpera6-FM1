@@ -139,6 +139,14 @@ static int seq_live(uint32_t t, uint32_t n) { return ctl_live_hold[t % NTRK][n >
  * that is being written, not the last round of it on top */
 static volatile uint32_t ctl_rec_mute;
 
+/* The PAD LAB backing is keyboard-gated even when FOLLOW is set to FIXED.
+ * Outside the demo, FOLLOW OFF retains the original standalone B sequencer. */
+static uint32_t pad_b_unarmed(uint32_t t)
+{
+    return t == 1u && (pad_demo_active || pad_follow_enabled) &&
+           !(pad_chord_harmony & 0x100u);
+}
+
 static void seq_release_t(uint32_t t)
 {
     seqrun_t *r = &sr[t];
@@ -156,7 +164,7 @@ static void seq_sound(uint32_t t, const step_t *s, int32_t transp)
 {
     seqrun_t *r = &sr[t];
     uint32_t i;
-    if (t == 1u && pad_follow_enabled && !(pad_chord_harmony & 0x100u)) return;
+    if (pad_b_unarmed(t)) return;
     for (i = 0; i < SEQ_CHORD && s->note[i] && r->nsnd < SEQ_CHORD; i++) {
         uint32_t n = seq_note(t, s, i, transp);
         if (seq_live(t, n) || ctl_rec_mute >> t & 1u) continue;
@@ -183,7 +191,7 @@ static void seq_tie_into(uint32_t t, const step_t *s, int32_t transp, uint32_t p
         else if (!seq_live(t, r->snd[i])) voice_release(t, r->snd[i], 1);
     }
     r->nsnd = j;
-    if (!play || (t == 1u && pad_follow_enabled && !(pad_chord_harmony & 0x100u))) return;
+    if (!play || pad_b_unarmed(t)) return;
     for (i = 0; i < SEQ_CHORD && s->note[i] && r->nsnd < SEQ_CHORD; i++) {
         uint32_t m = seq_note(t, s, i, transp);
         for (j = 0; j < keep && r->snd[j] != m; j++) ;
@@ -315,6 +323,17 @@ static void seq_tick(void)
          * unexpectedly play a melody when PLAY is pressed. */
         if (pad_demo_active && t != 1u) { seq_release_t(t); r->tie = 0; r->wait = NO_WAIT; continue; }
         if (!len || !(ctl_trk_on >> t & 1u)) { seq_release_t(t); r->tie = 0; r->wait = NO_WAIT; r->hold_end = 0; continue; }
+        /* Physical note-off from the LAST key closes B's gate. Release its
+         * currently sounding voice(s) in this very control block, cancel
+         * pending nudges/ratchets/ties and keep the clock running. No new
+         * sequencer notes play until the next complete triad is recognized. */
+        if (pad_b_unarmed(t)) {
+            seq_release_t(t);
+            r->tie = 0;
+            r->play = 0;
+            r->wait = NO_WAIT;
+            r->hold_end = 0;
+        }
         if (r->cnt >= r->dur) {                 /* the next step */
             uint32_t dv = DIV_PER_QUARTER[k->div % NDIV], base = q / dv, sw, carry = 0;
             r->frac += q % dv;                  /* (the rest of q spread over the steps: div steps are exactly a quarter) */
@@ -332,7 +351,7 @@ static void seq_tick(void)
             s = pad_seq_step(t, r->step);
             if (!pad_demo_active) seq_auto(t, r->step); /* saved automation must not alter preview sounds */
             TRACE('T', t, r->step * 1000000u + (s->note[0] ? (uint32_t)s->note[0] * 1000u : 0u) + (s->note[1] ? 900u : 0u) + (s->gate >= GATE_TIE ? 1u : 0u));
-            r->play = s->note[0] && !(s->ratch & STEP_OFF) && (s->chance >= 100u || xorshift(&rnd_state) % 100u < s->chance);
+            r->play = !pad_b_unarmed(t) && s->note[0] && !(s->ratch & STEP_OFF) && (s->chance >= 100u || xorshift(&rnd_state) % 100u < s->chance);
             r->wait = NO_WAIT;
             r->on_at = 0;
             if (r->play && s->nudge) {          /* later in the step: the old notes go (a late one at its end), the new ones when it is time */
