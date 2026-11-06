@@ -310,6 +310,39 @@ static inline void v1_env_release(v1_env_state_t *e, const v1_adsr_patch_t *p) {
     e->stage=4;
     e->release_step=e->level/(int32_t)v1_duration(p->release)+1;
 }
+/* 44.1kHz envelope rates depend solely on a patch, never on voice or
+   sample position. Calculate the two divisions ONCE PER AUDIO BLOCK,
+   then use exactly the previous integer envelope arithmetic per sample.
+   Keep the old renderer for deterministic bit-exact A/B tests. */
+typedef struct { int32_t sus, attack_step, decay_step; } vg1_env_rates_t;
+static inline vg1_env_rates_t vg1_env_rates(const v1_adsr_patch_t *p) {
+    vg1_env_rates_t r;
+    r.sus=v1_sustain(p->sustain);
+    r.attack_step=32767/(int32_t)v1_duration(p->attack)+1;
+    r.decay_step=(32767-r.sus)/(int32_t)v1_duration(p->decay)+1;
+    return r;
+}
+static inline int32_t vg1_env_sample_cached(v1_env_state_t *e,
+                                             const vg1_env_rates_t *r) {
+    switch(e->stage) {
+        case 1:
+            e->level += r->attack_step;
+            if(e->level>=32767) {e->level=32767;e->stage=2;}
+            break;
+        case 2:
+            e->level -= r->decay_step;
+            if(e->level<=r->sus) {e->level=r->sus;e->stage=3;}
+            break;
+        case 3: e->level=r->sus; break;
+        case 4:
+            e->level-=e->release_step;
+            if(e->level<=0) {e->level=0;e->stage=0;}
+            break;
+        default: e->level=0;
+    }
+    return e->level;
+}
+#ifdef VG1_LEGACY_ENVELOPES
 static inline int32_t v1_env_sample(v1_env_state_t *e, const v1_adsr_patch_t *p) {
     int32_t sus = v1_sustain(p->sustain);
     switch(e->stage) {
@@ -330,6 +363,7 @@ static inline int32_t v1_env_sample(v1_env_state_t *e, const v1_adsr_patch_t *p)
     }
     return e->level;
 }
+#endif /* VG1_LEGACY_ENVELOPES */
 typedef struct { int32_t a1,a2,a3,k; } v1_svf_coef_t;
 static inline v1_svf_coef_t v1_filter_coeff(int cutoff, int resonance) {
     int32_t g=v1_cut_g[v1_clip(cutoff,0,127)], k=8192-(resonance*7800)/127;
@@ -602,6 +636,8 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
     const uint32_t dual_filter=p->filter_type==VG1_F_X ||
         p->filter_type==VG1_F_FORMANT || p->filter_type==VG1_F_M;
     const int32_t modwheel_cut=((uint32_t)e->modwheel*32u)/127u;
+    const vg1_env_rates_t amp_rates=vg1_env_rates(&p->amp);
+    const vg1_env_rates_t filter_rates=vg1_env_rates(&p->filter_env);
     uint32_t arp_gate=p->vg_arp.gate;
     uint32_t arp_release;
     int32_t bendc,vib_depthc,master_gain;
@@ -659,7 +695,9 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             e->lfo[j]=v1_tri_lfo(e->lfo_ph[j]);
         }
         e->vibrato_ph+=(uint32_t)(p->vib_speed+1u)*45000u;
-        int32_t vibc=vib_depthc?
+        /* Pitch modulation is consumed only on the 32-sample tuning
+           tick. Calculating vibrato on the other 31 samples was wasted. */
+        int32_t vibc=(vib_depthc && (e->frames&31u)==0u)?
             (vib_depthc*v1_sine_sample(e->vibrato_ph))>>15 : 0;
         for(i=0;i<V1_VOICES;i++) {
             v1_voice_t *v=&e->voices[i];
@@ -684,8 +722,13 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
                         v->osc[oi].inc[si]=v1_detune_inc(v->osc[oi].base_inc[si],cents);
                 }
             }
+#ifdef VG1_LEGACY_ENVELOPES
             amp=v1_env_sample(&v->a,&p->amp);
             fe=v1_env_sample(&v->f,&p->filter_env);
+#else
+            amp=vg1_env_sample_cached(&v->a,&amp_rates);
+            fe=vg1_env_sample_cached(&v->f,&filter_rates);
+#endif
             if(!amp && !v->gate){v->active=0;continue;}
             const uint32_t vcs=fixed_vcs;
             for(j=0;j<3;j++) {
@@ -709,15 +752,18 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
 #endif
             sl=v1_clip(sl,-50000,50000);
             sr=v1_clip(sr,-50000,50000);
-            cut=(int32_t)p->cutoff+modwheel_cut
-               + (((int32_t)p->vg_env1.cutoff*amp)>>15)
-               + (((int32_t)p->vg_env2.cutoff*fe)>>15)
-               + ((int32_t)p->vg_keytrack.keytrk*((int32_t)v->note-60))/64
-               + ((int32_t)p->vg_keytrack.veltrk*((int32_t)v->velocity-64))/64;
-            for(j=0;j<3;j++)cut+=((int32_t)p->vg_lfo[j].cutoff*e->lfo[j])>>15;
-            cut=v1_clip(cut,0,127);
             v1_svf_coef_t c,c2;
             if((e->frames&31u)==0u) {
+                /* Both coefficients and cutoff modulation are only
+                   consumed every 32 samples. Old code needlessly did
+                   2 track divisions + 5 multiplies on EVERY voice sample. */
+                cut=(int32_t)p->cutoff+modwheel_cut
+                    + (((int32_t)p->vg_env1.cutoff*amp)>>15)
+                    + (((int32_t)p->vg_env2.cutoff*fe)>>15)
+                    + ((int32_t)p->vg_keytrack.keytrk*((int32_t)v->note-60))/64
+                    + ((int32_t)p->vg_keytrack.veltrk*((int32_t)v->velocity-64))/64;
+                for(j=0;j<3;j++)cut+=((int32_t)p->vg_lfo[j].cutoff*e->lfo[j])>>15;
+                cut=v1_clip(cut,0,127);
                 int32_t res=v1_clip((int32_t)p->resonance+(((int32_t)p->vg_env2.resonance*fe)>>15),0,127);
                 c=v1_filter_coeff(cut,res);
                 v->fa1=c.a1;v->fa2=c.a2;v->fa3=c.a3;v->fk=c.k;
@@ -799,7 +845,8 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
            Oscillator FAT stereo survives this stage. */
         e->auto_pan_ph+=131072u;
         int32_t pan=v1_clip((int32_t)p->vg_amp.pan+
-                  ((int32_t)p->vg_amp.spread*v1_sine_sample(e->auto_pan_ph)>>16),0,127);
+                  (p->vg_amp.spread?((int32_t)p->vg_amp.spread*
+                      v1_sine_sample(e->auto_pan_ph)>>16):0),0,127);
         dryl=(dryl*(254-pan*2))/127;
         dryr=(dryr*(pan*2))/127;
 #ifdef VG1_AUDIO_DIAGNOSTICS
