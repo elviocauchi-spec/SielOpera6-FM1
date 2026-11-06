@@ -74,6 +74,8 @@ typedef struct {
     int32_t lfo[3];
     volatile int32_t bend14;
     volatile uint8_t aftertouch,modwheel,midi_volume,midi_expression;
+    int32_t glide_current_q16,glide_target_q16,glide_step_q16;
+    uint32_t glide_remaining,tempo_bpm;
     uint16_t gate_step;
     uint32_t gate_phase;
     int32_t gate_smooth,gate_smooth_right;
@@ -307,10 +309,34 @@ static void v1_engine_init(v1_engine_t *e,const v1_patch_t *p) {
     e->patch=*p;
     e->rng=0x14f1ab27u;
     e->midi_volume=e->midi_expression=127u;
+    e->tempo_bpm=128u;
     e->gate_smooth=e->gate_smooth_right=32767;
 }
 static void v1_note_on(v1_engine_t *e,uint8_t note,uint8_t vel) {
-    uint32_t i,j,choice=0,oldest=0xffffffffu;
+    uint32_t i,j,choice=0,oldest=0xffffffffu,legato=0;
+    if(e->patch.vg_glide.on) {
+        choice=0;
+        legato=e->voices[0].active&&e->voices[0].gate;
+        if(!legato) {
+            e->glide_current_q16=(int32_t)note<<16;
+            e->glide_target_q16=e->glide_current_q16;
+            e->glide_step_q16=0;e->glide_remaining=0;
+        } else {
+            uint32_t n=e->patch.vg_glide.speed.denominator?
+                vg1_rate_samples(v1_quarter(e,e->tempo_bpm),e->patch.vg_glide.speed):0;
+            e->glide_target_q16=(int32_t)note<<16;
+            if(n) {
+                int32_t diff=e->glide_target_q16-e->glide_current_q16;
+                e->glide_remaining=n;
+                e->glide_step_q16=diff/(int32_t)n;
+                if(!e->glide_step_q16&&diff)
+                    e->glide_step_q16=diff>0?1:-1;
+            } else {
+                e->glide_current_q16=e->glide_target_q16;
+                e->glide_remaining=0;e->glide_step_q16=0;
+            }
+        }
+    } else {
     uint32_t max=e->patch.voice_limit?e->patch.voice_limit:8u;
     if(max>V1_VOICES)max=V1_VOICES;
     if(max<1u)max=1u;
@@ -318,13 +344,16 @@ static void v1_note_on(v1_engine_t *e,uint8_t note,uint8_t vel) {
         if(!e->voices[i].active) {choice=i;break;}
         if((uint32_t)e->voices[i].a.level<oldest) {oldest=(uint32_t)e->voices[i].a.level;choice=i;}
     }
+    } /* glide always reuses the single monophonic voice */
     v1_voice_t *v=&e->voices[choice];
     v->active=1;v->gate=1;v->note=note;v->velocity=vel?vel:1;
     v->age=++e->note_age;
-    v->f1.ic1=v->f1.ic2=v->f2.ic1=v->f2.ic2=0;
-    v->f1_right.ic1=v->f1_right.ic2=v->f2_right.ic1=v->f2_right.ic2=0;
-    v->pole6=v->pole6_right=0;
-    v1_env_attack(&v->a);v1_env_attack(&v->f);
+    if(!legato) {
+        v->f1.ic1=v->f1.ic2=v->f2.ic1=v->f2.ic2=0;
+        v->f1_right.ic1=v->f1_right.ic2=v->f2_right.ic1=v->f2_right.ic2=0;
+        v->pole6=v->pole6_right=0;
+        v1_env_attack(&v->a);v1_env_attack(&v->f);
+    }
     if(e->patch.vg_osc.retrig) {
         for(i=0;i<3;i++) if(e->patch.vg_lfo[i].retrig)e->lfo_ph[i]=0;
     }
@@ -339,8 +368,10 @@ static void v1_note_on(v1_engine_t *e,uint8_t note,uint8_t vel) {
             int32_t det=(int32_t)e->patch.vg_osc.fat;
             int32_t cents=((int32_t)j*2-centre)*det*24/127;
             o->base_inc[j]=o->inc[j]=v1_detune_inc(base,cents);
-            if(e->patch.vg_osc.retrig) o->ph[j]=0;
-            else o->ph[j]=v1_rand(&e->rng);
+            if(!legato) {
+                if(e->patch.vg_osc.retrig)o->ph[j]=0;
+                else o->ph[j]=v1_rand(&e->rng);
+            }
         }
     }
 }
@@ -384,8 +415,19 @@ static void v1_hold(v1_engine_t *e,uint8_t on,uint8_t note,uint8_t vel) {
             for(j=i+1;j<e->held_count;j++){e->held[j-1]=e->held[j];e->held_velocity[j-1]=e->held_velocity[j];}
             e->held_count--;break;
         }
-        if(v1_arp_mode(&e->patch)==V1_ARP_OFF)v1_note_off(e,note);
-        else if(!e->held_count && e->arp_active) {
+        if(v1_arp_mode(&e->patch)==V1_ARP_OFF) {
+            if(e->patch.vg_glide.on) {
+                /* Vanguard GLIDE is monophonic last-note priority. If the
+                 * top key is released while others remain, return to the
+                 * most recently held key without retriggering ENV1. */
+                if(e->voices[0].gate && e->voices[0].note==note) {
+                    if(e->held_count)
+                        v1_note_on(e,e->held[e->held_count-1u],
+                                     e->held_velocity[e->held_count-1u]);
+                    else v1_note_off(e,note);
+                }
+            } else v1_note_off(e,note);
+        } else if(!e->held_count && e->arp_active) {
             v1_note_off(e,e->arp_note);e->arp_active=0;
         }
     }
@@ -413,6 +455,7 @@ static void v1_arp_tick(v1_engine_t *e) {
 }
 static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm) {
     const v1_patch_t *p=&e->patch;
+    e->tempo_bpm=bpm;
     uint32_t f,i,j,step_frames=1u,gate_frames=1u;
     const uint32_t quarter=v1_quarter(e,bpm);
     if(p->vg_arp.on)step_frames=vg1_rate_samples(quarter,p->vg_arp.speed);
@@ -442,6 +485,11 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
     if(!gate_frames)gate_frames=1;
     arp_release=(step_frames*(arp_gate+1u))/128u;
     for(f=0;f<n;f++) {
+        if(p->vg_glide.on && e->glide_remaining) {
+            e->glide_current_q16+=e->glide_step_q16;
+            if(!--e->glide_remaining)
+                e->glide_current_q16=e->glide_target_q16;
+        }
         int32_t dryl=0,dryr=0,left,right;
         if(v1_arp_mode(p)!=V1_ARP_OFF){
             if(e->arp_phase==0 && e->held_count)v1_arp_tick(e);
@@ -484,6 +532,8 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
                     int32_t cents=((int32_t)p->vg_lfo[oi].detune*e->lfo[oi])>>15;
                     cents+=(((int32_t)p->vg_env1.detune*v->a.level)>>15);
                     cents+=env_pitch*100+bendc+vibc+age_cents;
+                    if(p->vg_glide.on && i==0)
+                        cents+=((e->glide_current_q16-e->glide_target_q16)*100)/65536;
                     for(si=0;si<V1_SUPER;si++)
                         v->osc[oi].inc[si]=v1_detune_inc(v->osc[oi].base_inc[si],cents);
                 }
