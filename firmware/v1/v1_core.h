@@ -721,6 +721,19 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         if(pct<40u)pct=40u;
         poly_gain_target=(poly_gain_target*(int32_t)pct)/100;
     }
+    /* The old gain budget ignored the final program MASTER setting and
+       additive effects returns. A HOT program at MASTER 93-97 could
+       repeatedly hit the last-resort output waveshaper while the voice
+       mixer itself remained unclipped. Reserve a modest additional
+       amount of headroom at the SOURCE for bright multi-note patches;
+       clean lower-level pads and ALL single notes retain their gain.
+       This avoids distorting a chord at the final PCM safety stage. */
+    if(sounding_voices>=3u && p->master>80u) {
+        uint32_t excess=(uint32_t)p->master-80u;
+        uint32_t penalty=excess*(sounding_voices>=5u?2u:1u);
+        uint32_t pct=penalty<35u?100u-penalty:65u;
+        poly_gain_target=(poly_gain_target*(int32_t)pct)/100;
+    }
     const int32_t stack_gain_q8=vg1_stack_gain_q15(p)>>7;
     /* Only dual-path modes need the second coefficient / second division. */
     const uint32_t dual_filter=p->filter_type==VG1_F_X ||
