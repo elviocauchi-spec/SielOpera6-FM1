@@ -44,7 +44,15 @@ assert "ctl_mix_lvl[1] = (uint8_t)pad_demo_b_level;" in level, "B knob modifies 
 assert "pad_demo_apply_mix();" not in level, "B knob must not reinitialize other mixer channels"
 assert "ctl_mix_lvl[0]" not in level
 presets_block = app[app.index("if (pad_demo_active && (e = fm1_enc_take(ENC_PRESETS))"):app.index("} else if ((e = fm1_enc_take(ENC_PRESETS)) != 0 && save_armed)")]
-assert "prog_get(pad_demo_a_prog, &live_p[0]);" in presets_block
+assert "pad_demo_sound(pad_demo_a_prog, &live_p[0]);" in presets_block
+assert "pad_demo_step(pad_demo_a_prog, e)" in presets_block, "PRESETS must skip unused empty slots"
+helper = app[app.index("static void pad_demo_sound("):app.index("static void prog_put(")]
+assert "patch_from_factory(p, &FACT_PAD_LAB[" in helper, "pad previews must use REAL factory sounds, not stale saved patches"
+assert "else prog_get(n, p);" in helper, "preserve legacy/saved program browsing"
+assert "psect[n / PS_N].used[n % PS_N]" in helper, "show user-saved high program slots"
+assert "return n < NFACT + NVIBE + NPAD_LAB;" in helper, "skip repeated INIT slots"
+assert "if (n == 31u) return 0u;" in helper, "skip existing empty INIT at #32"
+assert "pad_demo_a_prog = 70u;" in app
 assert "pad_demo_exit()" not in presets_block, "browse A while B continues arpeggiating"
 assert "trk_load(" not in presets_block, "preset previews must not overwrite saved-song selection"
 
