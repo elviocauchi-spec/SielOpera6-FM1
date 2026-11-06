@@ -444,6 +444,8 @@ static void v1_midi(void) {
         if(kind==0x90u && d2)v1_queue(1,d1,d2);
         else if(kind==0x80u || (kind==0x90u&&!d2))v1_queue(0,d1,0);
         else if(kind==0xc0u)req_program=d1%V1_PRESETS;
+        else if(kind==0xe0u)v1.bend14=(int32_t)(((uint32_t)d2<<7)|d1)-8192;
+        else if(kind==0xd0u)v1.aftertouch=d1;
         else if(kind==0xb0u && (d1==120u||d1==123u)) {
             uint32_t k;for(k=0;k<128;k++)v1_queue(0,k,0);
         }
