@@ -964,8 +964,18 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         int32_t pan=v1_clip((int32_t)p->vg_amp.pan+
                   (p->vg_amp.spread?((int32_t)p->vg_amp.spread*
                       v1_sine_sample(e->auto_pan_ph)>>16):0),0,127);
-        dryl=(dryl*(254-pan*2))/127;
-        dryr=(dryr*(pan*2))/127;
+        /* The old pan factors ranged 0..2: at full LEFT or RIGHT the
+           chosen channel was *doubled* (+6 dB), after all the careful
+           voice-bus headroom limiting. With stereo SPREAD this caused
+           excessive peaks and made the output soft limiter work hard
+           even with an otherwise clean 3-note patch.
+           A unity-ceiling balance law preserves centre-channel gain
+           while NEVER amplifying either channel beyond 1.0.
+           This is a gain correction, not a mono or stereo-width bypass. */
+        const int32_t pan_l=pan<64?127:254-pan*2;
+        const int32_t pan_r=pan>63?127:pan*2;
+        dryl=(dryl*pan_l)/127;
+        dryr=(dryr*pan_r)/127;
 #ifdef VG1_AUDIO_DIAGNOSTICS
         if(dryl>65535||dryl<-65535||dryr>65535||dryr<-65535)
             e->diag_pan_over++;
