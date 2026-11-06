@@ -114,10 +114,18 @@ static void vg1_audio_isr_load(uint32_t elapsed_ticks,uint32_t frames) {
     v1_dsp_pct=pct;
     if(pct>72u && v1.last_render_vcs>1u)
         v1.runtime_fat_limit=v1.last_render_vcs-1u;
+    /* FAT=1 is the irreducible one-oscillator-layer-per-note mode. If
+       a dense chord still consumes the ISR deadline, preserve all
+       musical voices but fade to the economical stereo 2-comb room. */
+    if(pct>76u && v1.last_render_vcs<=1u && v1.held_count>=4u)
+        v1.runtime_reverb_economy=1u;
     if(!v1.held_count) {
         uint32_t i,active=0;
         for(i=0;i<V1_VOICES;i++)active|=v1.voices[i].active;
-        if(!active)v1.runtime_fat_limit=0;
+        if(!active) {
+            v1.runtime_fat_limit=0;
+            v1.runtime_reverb_economy=0;
+        }
     }
 }
 static void app_audio(int32_t *out,uint32_t n) {
@@ -134,6 +142,8 @@ static void app_audio(int32_t *out,uint32_t n) {
         v1.gate_smooth=v1.gate_smooth_right=32767;
         v1.gate_out_left=v1.gate_out_right=32767;
         v1.runtime_fat_limit=0; /* new program restores its configured FAT */
+        v1.runtime_reverb_economy=0;
+        v1.reverb_late_gain_q15=32767; /* normal four-comb room */
         v1.poly_gain_q15=32767; /* no inherited chord attenuation */
     }
     while(qr!=qw) {
