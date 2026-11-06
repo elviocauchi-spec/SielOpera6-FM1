@@ -670,10 +670,23 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
     const int32_t gate_alpha=vg1_gate_contour_alpha(p->vg_gate.contour);
     const uint32_t arp_enabled=v1_arp_mode(p)!=V1_ARP_OFF;
     uint32_t sounding_voices=0u;
-    for(vi=0;vi<V1_VOICES;vi++)
-        if(e->voices[vi].active && (e->voices[vi].gate ||
-            e->voices[vi].a.level>256))
-            sounding_voices++;
+    /* The engine reserves 16 slots for custom VOICES settings, but default
+       Vanguard programs enable only eight. Avoid testing the unused upper
+       eight slots 44100 times/sec. Keep a slot active until its release
+       finishes even if the VOICES knob is lowered mid-chord. */
+    uint32_t render_slots=p->vg_glide.on?1u:
+        (p->voice_limit?p->voice_limit:8u);
+    if(render_slots>V1_VOICES)render_slots=V1_VOICES;
+    for(vi=0;vi<V1_VOICES;vi++) {
+        if(e->voices[vi].active) {
+            if(vi>=render_slots)render_slots=vi+1u;
+            if(e->voices[vi].gate || e->voices[vi].a.level>256)
+                sounding_voices++;
+        }
+    }
+#ifdef VG1_LEGACY_SCAN_ALL
+    render_slots=V1_VOICES;
+#endif
     uint32_t fixed_vcs=vg1_fat_render_count(p,sounding_voices);
     if(e->runtime_fat_limit && fixed_vcs>e->runtime_fat_limit)
         fixed_vcs=e->runtime_fat_limit;
@@ -783,7 +796,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
            tick. Calculating vibrato on the other 31 samples was wasted. */
         int32_t vibc=(vib_depthc && update_controls)?
             (vib_depthc*v1_sine_sample(e->vibrato_ph))>>15 : 0;
-        for(i=0;i<V1_VOICES;i++) {
+        for(i=0;i<render_slots;i++) {
             v1_voice_t *v=&e->voices[i];
             int32_t sl=0,sr=0,fe,amp,cut;
             if(!v->active)continue;
