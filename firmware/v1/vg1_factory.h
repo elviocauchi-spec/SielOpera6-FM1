@@ -6,9 +6,41 @@
 #ifndef VG1_FACTORY_H
 #define VG1_FACTORY_H
 #include "v1_core.h"
-#define V1_PRESETS 8u
+/* Eight existing authored VG-1 presets plus 128 imported ProSounds slots.
+ * Imported values are a labelled experimental approximation: only the
+ * bank's ARP and Trancegate enable indices have been verified. */
+#define VG1_AUTHORED_PRESETS 8u
+#define VG1_PROSOUNDS_PRESETS 128u
+#define V1_PRESETS (VG1_AUTHORED_PRESETS+VG1_PROSOUNDS_PRESETS)
 #define O(w,l,p,d,s,f) {w,l,p,d,s,f}
 #define ADS(a,d,s,r) {a,d,s,r}
+#define PS_MASK(n) ((n)==0?0xaaaa:(n)==1?0xf0f0:(n)==2?0xbaba:(n)==3?0xeaea:(n)==4?0xdddd:0xcc33)
+/* Conservative, FM1-safe mapping of experimental ProSounds source
+ * controls. The original 92 VST parameter indices are not documented;
+ * only the ARP and gate ON switches are verified against this bank.
+ * All other numbers from the source are explicitly provisional. */
+#define PS(N,W0,W1,W2,L0,L1,L2,PW0,PW1,PW2,S0,S1,S2, \
+           A,D,S,R,FA,FD,FS,FR,CUT,RES,FTYPE,FAT,VCS,DRIVE,LVL,PAN,SPREAD, \
+           GATE,ARP,ARPMODE,DELAY,REVERB,MASTER,ENVCUT,PAT,ARPGATE,LFO,AGE,GATECLK) \
+    { .name=N, .vg_osc={.retrig=1,.fat=FAT,.vcs=VCS,.age=AGE}, \
+      .vg_lfo={{.speed=LFO,.detune=2},{.speed=LFO,.cutoff=ENVCUT/3}, \
+               {.speed=LFO/2,.pwm=SPREAD/4}}, \
+      .vg_env1={.cutoff=ENVCUT},.vg_env2={.cutoff=ENVCUT/2}, \
+      .vg_keytrack={.keytrk=16,.veltrk=8}, \
+      .vg_amp={.drive=DRIVE,.level=LVL,.pan=PAN,.spread=SPREAD}, \
+      .vg_gate={.enabled=GATE,.stereo=GATE,.left=PS_MASK(PAT), \
+                .right=PS_MASK((PAT+2)%6),.mix=115,.contour=100, \
+                .speed={(GATECLK==2?8:16),0}}, \
+      .vg_delay={.on=(DELAY>8),.mix=DELAY,.type=VG1_DELAY_CROSS, \
+                 .feedback=27,.damp=46,.speed={8,0}}, \
+      .vg_reverb={.on=(REVERB>18),.mix=REVERB,.predelay=18, \
+                  .room_size=55,.damp=56,.width=110}, \
+      .vg_arp={.on=ARP,.mode=ARPMODE,.gate=ARPGATE,.octaves=1, \
+               .speed={16,0},.retrig=1}, \
+      .bend_range=2,.vib_speed=LFO,.vib_depth=12, \
+      .osc={O(W0,L0,PW0,0,S0,0),O(W1,L1,PW1,0,S1,0),O(W2,L2,PW2,0,S2,0)}, \
+      .amp=ADS(A,D,S,R),.filter_env=ADS(FA,FD,FS,FR), \
+      .cutoff=CUT,.resonance=RES,.filter_type=FTYPE,.master=MASTER }, 
 static const v1_patch_t V1_FACTORY[V1_PRESETS] = {
     { .name="HEAVEN LEAD",
       .vg_osc={.retrig=0,.fat=49,.vcs=6,.age=7}, .vg_lfo={{.speed=5,.detune=6},{.speed=5,.detune=-4},{.speed=3,.cutoff=4}},
@@ -111,7 +143,13 @@ static const v1_patch_t V1_FACTORY[V1_PRESETS] = {
       .cutoff=96,.resonance=49,.filter_type=V1_HP12,
       .master=88
     },
+    /* Exact names/bank slot order from user's VST2 ProSounds source bank.
+       Sound parameters are provisional until the original VGRD VST2
+       getParameterName() and scaling table can be calibrated. */
+#include "vg1_prosounds_generated.inc"
 };
+#undef PS
+#undef PS_MASK
 #undef O
 #undef ADS
 
