@@ -62,10 +62,10 @@ From this branch, on a suitable build environment with the pinned
 JieLi AC79NN SDK and toolchain:
 
 ```sh
-V1_FM1=1 BOARD=fm1 sh build.sh
+VG1_FM1=1 BOARD=fm1 sh build.sh
 ```
 
-Output: `build/v1-fm1.fwsc`. The standalone Vanguard build reuses only
+Output: `build/vg1-fm1.fwsc`. The standalone Vanguard build reuses only
 the GPL-licensed board platform, display, MIDI, flash recovery and packaging.
 It does not link the Opera 6 synthesis engine, sequencer, mixer or UI.
 
