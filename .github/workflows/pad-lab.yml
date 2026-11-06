@@ -1,4 +1,4 @@
-name: PAD LAB - Host tests and experimental FM-1 build
+name: PAD LAB - Direct-note arp tests and experimental FM-1 build
 
 on:
   push:
@@ -10,16 +10,11 @@ on:
   workflow_dispatch:
 
 jobs:
-  chord-tests:
+  arp-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Compile and run deterministic chord follower tests
-        run: |
-          set -eu
-          cc -std=c11 -O2 -Wall -Wextra -Werror tests/pad_chord_test.c -o /tmp/pad-chord-test
-          /tmp/pad-chord-test
       - name: Compile and test exact held-key arpeggiation
         run: |
           set -eu
@@ -45,7 +40,7 @@ jobs:
           print("PAD LAB source invariants: OK")
 
   firmware:
-    needs: chord-tests
+    needs: arp-tests
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
