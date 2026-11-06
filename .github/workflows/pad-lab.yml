@@ -1,0 +1,79 @@
+name: PAD LAB - Direct-note arp tests and experimental FM-1 build
+
+on:
+  push:
+    branches:
+      - feature/pad-lab-chord-follow
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  arp-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and test exact held-key arpeggiation
+        run: |
+          set -eu
+          cc -std=c11 -O2 -Wall -Wextra -Werror tests/pad_keys_test.c -o /tmp/pad-keys-test
+          /tmp/pad-keys-test
+      - name: Compile and test distinct pad factory programs
+        run: |
+          set -eu
+          cc -std=c11 -O2 -Wall -Wextra -Werror tests/pad_presets_test.c -o /tmp/pad-presets-test
+          /tmp/pad-presets-test
+      - name: Verify smooth, metronome-free pad audition
+        run: python3 tests/pad_lab_audition_test.py
+      - name: Check patch and UI source invariants
+        shell: python
+        run: |
+          from pathlib import Path
+          src = Path("firmware/src/obervave.c").read_text()
+          seq = Path("firmware/src/obv_seq.h").read_text()
+          ui = Path("firmware/src/obv_ui.h").read_text()
+          presets = Path("firmware/src/obv_patches.h").read_text()
+          assert '#include "pad_keys.h"' in src
+          assert 'pad_keys_event(on, note)' in src
+          assert 'pad_keys_pick(' in seq
+          assert 'pad_arp_enabled' in seq
+          assert 'P A D   L A B' in ui
+          assert 'FACT_PAD_LAB' in presets
+          assert 'NFACT + NVIBE + NPAD_LAB' in src
+          print("PAD LAB source invariants: OK")
+
+  firmware:
+    needs: arp-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Pillow
+        run: python3 -m pip install Pillow
+      - name: JieLi compiler
+        run: sh tools/get_toolchain.sh
+      - name: AC79 SDK
+        shell: bash
+        run: |
+          set -eu
+          for i in 1 2 3; do
+            rm -rf "$HOME/fw-AC79_AIoT_SDK"
+            if timeout 180s git clone --depth 1 --single-branch --branch AC79NN_SDK_V1.2.1_2023-12-13 https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git "$HOME/fw-AC79_AIoT_SDK"; then
+              break
+            fi
+          done
+          test -f "$HOME/fw-AC79_AIoT_SDK/cpu/wl82/tools/uboot.boot"
+      - name: Compile experimental firmware
+        run: BOARD=fm1 sh build.sh
+      - name: Check output
+        run: test -s build/obervave.fwsc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OPERA-PAD-LAB-UNTESTED-HARDWARE
+          path: build/obervave.fwsc
+          if-no-files-found: error

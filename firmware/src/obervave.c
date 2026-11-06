@@ -21,6 +21,13 @@ static void app_idle(void);
 #include "obv_params.h"
 #include "obv_fx.h"
 #include "obv_engine.h"
+#include "pad_keys.h"
+/* Preview stays RAM-only: no flash patch/sequence format changes. */
+/* B is deliberately prominent enough to hear under the pad.
+ * The mixer squares level: 112 is ~1.25x unity versus 80 being 0.64x. */
+#define PAD_DEMO_B_LEVEL 112u
+static uint32_t pad_demo_active, pad_demo_b_level = PAD_DEMO_B_LEVEL;
+static uint32_t pad_demo_a_prog = 70u;
 #include "obv_seq.h"
 #include "obv_patches.h"
 
@@ -65,7 +72,7 @@ static const char *const DV_NAME[NDV] = {"OVERDRV", "DIST", "FUZZ", "CRUSH"};
 enum { RQ_OFF, RQ_32, RQ_16, RQ_8, RQ_4, NRQ };   /* REC: unquantised, or to 1/32 .. 1/4 */
 static const char *const RQ_NAME[NRQ] = {"OFF", "1/32", "1/16", "1/8", "1/4"};
 static const uint8_t RQ_PER_QUARTER[NRQ] = {0, 8, 4, 2, 1};
-static const uint8_t TPROG_DEF[NTRK] = {0, 6, 42, 57};   /* DARK ARP, FAT BASS, WARM PAD, SOLO LEAD */
+static const uint8_t TPROG_DEF[NTRK] = {70, 73, 42, 57};   /* DARK ARP, FAT BASS, WARM PAD, SOLO LEAD */
 typedef struct {                                /* SET_VERSION 3 (1.5.x): read once, to bring the globals over */
     uint8_t version, prog, tempo, midi_ch;
     int8_t tune, oct;
@@ -184,11 +191,49 @@ static uint32_t level_of(uint32_t vel) { return vel <= 50u ? 0u : vel <= 85u ? 1
 static uint32_t seq_pages(uint32_t t) { return pat.trk[t].len ? (pat.trk[t].len + 15u) / 16u : 1u; }
 static uint8_t cc_map[128];                     /* MIDI CC -> parameter + 1, 0 = none */
 
-static void prog_get(uint32_t n, patch_t *p)    /* program n: the user's, else the factory's (65-70: VIBE's, 71-99: INIT) */
+static void prog_get(uint32_t n, patch_t *p)    /* user saves first; else 1-64 factory, 65-70 VIBE, 71-80 PAD LAB, 81-99 INIT */
 {
     n %= NPROG;
     if (psect[n / PS_N].used[n % PS_N]) *p = psect[n / PS_N].p[n % PS_N];
-    else patch_from_factory(p, n < NFACT ? &FACTORY[n] : n < NFACT + NVIBE ? &FACT_VIBE[n - NFACT] : &FACT_INIT);
+    else patch_from_factory(p, n < NFACT ? &FACTORY[n] : n < NFACT + NVIBE ? &FACT_VIBE[n - NFACT] : n < NFACT + NVIBE + NPAD_LAB ? &FACT_PAD_LAB[n - NFACT - NVIBE] : &FACT_INIT);
+}
+
+/* PAD LAB has an actual factory pad bank, independent of stale user-saved
+ * content in the same program slots. The preview is RAM ONLY: stored user
+ * programs always win in normal mode; the audition never overwrites them.
+ * The rest of PRESETS includes the existing factory/user sounds. */
+static void pad_demo_sound(uint32_t n, patch_t *p)
+{
+    n %= NPROG;
+    if (n >= NFACT + NVIBE && n < NFACT + NVIBE + NPAD_LAB)
+        patch_from_factory(p, &FACT_PAD_LAB[n - NFACT - NVIBE]);
+    else prog_get(n, p);
+}
+
+/* Skip repeated empty INIT slots, otherwise 19 consecutive PRESETS positions
+ * appear to have exactly the same sound. Still expose a slot if the user has
+ * stored a real patch there, and keep legacy sounds accessible. */
+static uint32_t pad_demo_slot_valid(uint32_t n)
+{
+    if (psect[n / PS_N].used[n % PS_N]) return 1u;
+    if (n == 31u) return 0u;              /* factory #32: empty INIT */
+    return n < NFACT + NVIBE + NPAD_LAB;
+}
+static uint32_t pad_demo_step(uint32_t previous, int32_t delta)
+{
+    uint32_t count;
+    int32_t dir = delta < 0 ? -1 : 1, n = (int32_t)(previous % NPROG);
+    if (delta > (int32_t)NPROG) delta = (int32_t)NPROG;
+    if (delta < -(int32_t)NPROG) delta = -(int32_t)NPROG;
+    count = (uint32_t)(delta < 0 ? -delta : delta);
+    while (count--) {
+        uint32_t tries;
+        for (tries = 0u; tries < NPROG; tries++) {
+            n = (n + dir + (int32_t)NPROG) % (int32_t)NPROG;
+            if (pad_demo_slot_valid((uint32_t)n)) break;
+        }
+    }
+    return (uint32_t)n;
 }
 
 static void prog_put(uint32_t n, const patch_t *p)   /* program n is the user's now; saved when quiet */
@@ -215,7 +260,7 @@ static void fx_sync(void)                       /* the effects as edited (FX pag
 }
 static int is_a_only(uint32_t p) { return p >= P_CHO_RATE && p <= P_REV_MIX; }   /* (the effects: one chain; each sound has its arp) */
 static patch_t *ed_patch(uint32_t p) { return is_a_only(p) ? &live_p[0] : &live_p[seq_trk % NTRK]; }
-static uint32_t ed_prog(void) { return trk_prog[seq_trk % NTRK]; }
+static uint32_t ed_prog(void) { return pad_demo_active ? pad_demo_a_prog : trk_prog[seq_trk % NTRK]; }
 static uint32_t ed_edited(void) { return trk_edited[seq_trk % NTRK]; }
 
 static void trk_load(uint32_t t, uint32_t n)    /* track t: program n */
@@ -238,6 +283,7 @@ static void play_note(uint32_t on, uint32_t note, uint32_t vel)
 {
     note &= 127u;
     if (on) note_part[note] = (uint8_t)(seq_trk % NTRK);
+    if (note_part[note] == 0u) pad_keys_event(on, note);
     note_event_p(note_part[note], on, note, vel);
 }
 static int rec_keys(void) { return !ed_patch(P_ARP_MODE)->v[P_ARP_MODE]; }   /* (feeding an arp: its notes are recorded) */
@@ -258,6 +304,61 @@ static void mix_apply(void)
     ctl_dv_type = set.dv_type; ctl_dv_amt = set.dv_amt; ctl_dv_tone = set.dv_tone; ctl_dv_mix = set.dv_mix;   /* (VIBE) */
 }
 static uint32_t trk_silent(uint32_t t) { return ctl_mix_off >> (t % NTRK) & 1u; }
+
+/* A/B audition is deliberately isolated from saved patch and pattern state.
+ * Presets and sequences on flash remain unchanged. Turn SELECT on the BACKING
+ * page to leave/re-enter the live demo. */
+static patch_t pad_demo_saved[2];
+static uint32_t pad_demo_saved_edited[2];
+static void pad_demo_apply_mix(void)
+{
+    if (!pad_demo_active) return;
+    ctl_mix_off = 0xCu;      /* preview: only A and B are audible */
+    /* NEVER touch A's level, pan or FX sends when adjusting B. The pad's
+     * current output balance belongs to A, not the backing page. */
+    ctl_mix_lvl[1] = (uint8_t)pad_demo_b_level;
+    ctl_mix_pan[1] = 0;
+    ctl_mix_cho[1] = 30u;
+    ctl_mix_dly[1] = 35u;
+    ctl_mix_rev[1] = 70u;
+    ctl_mix_drv[1] = 0u;
+}
+static void pad_demo_enter(void)
+{
+    if (pad_demo_active) return;
+    pad_demo_saved[0] = live_p[0];
+    pad_demo_saved[1] = live_p[1];
+    pad_demo_saved_edited[0] = trk_edited[0];
+    pad_demo_saved_edited[1] = trk_edited[1];
+    patch_from_factory(&live_p[0], &FACT_PAD_LAB[0]); /* factory CELESTIAL, not an old user INIT */
+    patch_from_factory(&live_p[1], &FACT_PAD_LAB[3]); /* backing: MIST FLOW */
+    pad_demo_a_prog = 70u;
+    pad_demo_b_level = PAD_DEMO_B_LEVEL;
+    pad_demo_track.div = D_4;
+    pad_arp_enabled = 1u;
+    pad_arp_octave = 0; /* B duplicates ACTUAL notes, no harmonizer */
+    pad_demo_active = 1u;
+    seq_trk = 0u;           /* the keys play the pad on A */
+    ctl_panic = 1u;
+    ctl_trk_on |= 2u;
+    ctl_seq_restart = 1u;
+    ctl_count = 0u;
+    ctl_click = 0u;         /* NEVER inherit a user-enabled metronome in PAD LAB */
+    ctl_seq_run = 1u;       /* backing waits silently for a played triad */
+    pad_demo_apply_mix();
+}
+static void pad_demo_exit(void)
+{
+    if (!pad_demo_active) return;
+    ctl_seq_run = 0u;
+    ctl_panic = 1u;
+    pad_demo_active = 0u;
+    live_p[0] = pad_demo_saved[0];
+    live_p[1] = pad_demo_saved[1];
+    trk_edited[0] = pad_demo_saved_edited[0];
+    trk_edited[1] = pad_demo_saved_edited[1];
+    mix_apply();             /* restore the exact stored mixer configuration */
+}
 
 /* ---- every pattern keeps its instruments and its mix (as VIBE's 3.0): the four tracks' sounds with their edits and
  * program numbers, the mixer (level, pan, the four sends, mute, solo), the effects and MASTER. They live behind the
@@ -344,6 +445,7 @@ static int snd_changed(uint32_t n)              /* the sounds and the mix now di
     const psnd_t *s = &psnd[n % NPAT];
     mixset_t now;
     uint32_t t;
+    if (pad_demo_active) return 0; /* audition patches must NEVER be automatically saved */
     if (s->magic != PSN2_MAGIC) return 1;
     for (t = 0; t < NTRK; t++)
         if (s->prog[t] != trk_prog[t] || s->edited[t] != trk_edited[t] || !bytes_same(&s->p[t], &live_p[t], sizeof(patch_t))) return 1;
@@ -737,7 +839,21 @@ static void draw_header(void)
         param_value(v, P_CUTOFF, ed_patch(P_CUTOFF)->v[P_CUTOFF]);
         scat(tags, "CUTOFF ");
         scat(tags, v);
-        ui_header(ed_prog(), ed_patch(0)->v + NPARAM, ed_edited(), tags, seq_trk);
+        ui_header(pad_demo_active ? pad_demo_a_prog : ed_prog(), ed_patch(0)->v + NPARAM, ed_edited(), tags, seq_trk);
+        return;
+    }
+    if (page == PG_PERFORM || page == PG_BACKING) {
+        if (pad_demo_active) scat(tags, "DEMO ");
+        if (pad_demo_active) {
+            char n[12];
+            fmt_u(n, pad_keys_held());
+            scat(tags, "ARP ");
+            scat(tags, n);
+            scat(tags, " KEYS ");
+            scat(tags, pad_arp_enabled ? "ON" : "OFF");
+        } else scat(tags, "SEQ");
+        if (ctl_seq_run && !pad_demo_active) scat(tags, "  PLAY");
+        ui_header(pad_demo_active ? pad_demo_a_prog : ed_prog(), ed_patch(0)->v + NPARAM, ed_edited(), tags, seq_trk);
         return;
     }
     {   /* short words; mode, filter, HOLD, SEQ and REC always (at most 23 characters: MONO NOTCH HOLD SEQ REC); then,
@@ -759,7 +875,7 @@ static void draw_header(void)
         if (ctl_seq_run) scat(tags, " SEQ");
         if (rec) scat(tags, " REC");
     }
-    ui_header(ed_prog(), ed_patch(0)->v + NPARAM, ed_edited(), tags, seq_trk);
+    ui_header(pad_demo_active ? pad_demo_a_prog : ed_prog(), ed_patch(0)->v + NPARAM, ed_edited(), tags, seq_trk);
 }
 
 static void fmt_s(char *s, int32_t v)          /* signed: +3, -12, 0 */
@@ -835,7 +951,14 @@ static void draw_page(void)
         k[i].present = 0;
         k[i].bip = 0;
         k[i].value[0] = 0;
-        if (page == PG_MIXER && !layer) {      /* the mixer: A-D, the row LEVEL / PAN / SEND (F1 again: the next row) */
+        if (page == PG_BACKING && !layer) {
+            static const char *const BL[4] = {"B ARP", "B LEVEL", "SPEED", "OCTAVE"};
+            k[i].label = BL[i]; k[i].present = 1;
+            if (i == 0u) { scat(k[i].value, pad_arp_enabled ? "ON" : "OFF"); k[i].v = pad_arp_enabled; k[i].max = 1; }
+            else if (i == 1u) { uint32_t vl = pad_demo_active ? pad_demo_b_level : set.mix_lvl[1]; fmt_u(k[i].value, vl); k[i].v = vl; k[i].max = 127; }
+            else if (i == 2u) { uint32_t div = pad_demo_active ? pad_demo_track.div : pat.trk[1].div; scat(k[i].value, DIV_NAME[div % NDIV]); k[i].v = div % NDIV; k[i].max = NDIV - 1; }
+            else { fmt_s(k[i].value, pad_arp_octave); k[i].v = pad_arp_octave + 2; k[i].max = 4; }
+        } else if (page == PG_MIXER && !layer) {      /* the mixer: A-D, the row LEVEL / PAN / SEND (F1 again: the next row) */
             static const char *const ML[NTRK] = {"A", "B", "C", "D"}, *const MM[4] = {"VOLUME", "FILTER", "DRIVE", "COMP"};
             uint32_t t = i;
             k[i].label = mix_row == 6u ? MM[t] : ML[t];
@@ -873,7 +996,8 @@ static void draw_page(void)
         } else if (seq_shown()) {
             seq_knob(&k[i], i);
         } else if (p >= 0) {
-            k[i].label = PDEF[p].name;
+            static const char *const PAD_KNOB[4] = {"TONE", "MOTION", "WIDTH", "SPACE"};
+            k[i].label = page == PG_PERFORM ? PAD_KNOB[i] : PDEF[p].name;
             k[i].v = ed_patch((uint32_t)p)->v[p];
             k[i].max = PDEF[p].max;
             k[i].bip = PDEF[p].kind == K_BIP || PDEF[p].kind == K_SEMI || PDEF[p].kind == K_MORPH;
@@ -958,6 +1082,9 @@ static void draw_hints(void)
     else if (layer == L_GLO) ui_hints(rec ? "1-4: RECORD A-D  5-8: MUTE" : "1-4: START/STOP A-D 5-8: MUTE", "9-12: SOLO  G5: TAP TEMPO", C_AMBER);
     else if (layer == L_SAVE) ui_hints("WHITE 1-8: GO  BLACK 1-8: COPY", "+ " NM_SELBTN " PRESSED: NEW SOUND", C_AMBER);
     else if (layer == L_FX) ui_hints("KNOBS: CHORUS DELAY REVERB", "AND THE DELAY'S TIME", C_AMBER);
+    else if (pad_demo_active && page == PG_BACKING) ui_hints("SELECT: EXIT PAD DEMO", "ARP / LEVEL / SPEED / OCT", C_AMBER);
+    else if (pad_demo_active) ui_hints("HOLD ANY NOTES FOR B ARP", "PRESETS: CHANGE A, KEEP B", C_CREAM);
+    else if (page == PG_BACKING) ui_hints("SELECT: ENTER PAD DEMO", "B ARPS YOUR ACTUAL NOTES", C_AMBER);
     else ui_hints(ROT[r][0], ROT[r][1], C_CREAM);
 }
 
@@ -1241,6 +1368,7 @@ static void pat_switch(uint32_t n)
 {
     static char msg[20];
     n %= NPAT;
+    if (pad_demo_active) pad_demo_exit();
     if (n != set.pat) {
         if (snd_changed(set.pat)) snd_capture(set.pat);   /* (its instruments stay with it) */
         if (pat_edited) { pat_dirty = 1; pat_next = n + 1u; return; }   /* saved when quiet, then loaded */
@@ -1258,6 +1386,7 @@ static void pat_switch(uint32_t n)
 static void pat_go(uint32_t n)
 {
     static char msg[20];
+    if (pad_demo_active) pad_demo_exit();
     n %= NPAT;
     if (pat_queue) {                            /* another one was next: take it back (the ISR never stops us halfway) */
         fm1_irq_off();
@@ -1698,7 +1827,10 @@ static void note_in(uint32_t on, uint32_t note, uint32_t vel)
 {
     uint32_t t;
     note &= 127u;
-    play_note(on, note, vel);
+    { uint32_t last_keys = pad_keys.revision;
+      play_note(on, note, vel);
+      if (pad_keys.revision != last_keys) dirty_hdr = dirty_tags = 1;
+    }
     if (!on) for (t = 0; t < NTRK; t++) ctl_live_hold[t][note >> 5 & 3u] &= ~(1u << (note & 31u));   /* (let go: the sequencer's again) */
     if (rec_keys()) rec_note(on, note, vel);
     if (on) {
@@ -1967,6 +2099,7 @@ static void app_main(void)
             set_v3_t o3;
             memset(&set, 0, sizeof set);
             set.version = SET_VERSION;
+            set.prog = 70;              /* Fresh install: CELESTIAL. Existing settings are preserved. */
             set.tempo = 120;
             set.click = CLICK_REC;              /* (the click while recording, from the start) */
             old.version = 0; o3.version = 0;
@@ -1985,7 +2118,8 @@ static void app_main(void)
     }
     if (!set.mix_lvl[0] && !set.mix_lvl[1] && !set.mix_lvl[2] && !set.mix_lvl[3]) {   /* (new: the tracks' sounds and the mixer) */
         uint32_t t;
-        for (t = 0; t < NTRK; t++) { set.tprog[t] = TPROG_DEF[t]; set.mix_lvl[t] = 100; set.mix_cho[t] = set.mix_dly[t] = set.mix_rev[t] = 0; set.mix_pan[t] = 0; }
+        for (t = 0; t < NTRK; t++) { set.tprog[t] = TPROG_DEF[t]; set.mix_lvl[t] = t == 1u ? 60u : 100u; set.mix_cho[t] = set.mix_dly[t] = set.mix_rev[t] = 0; set.mix_pan[t] = 0; }
+        set.mix_rev[1] = 55; set.mix_dly[1] = 30; set.mix_cho[1] = 22; /* background behind pad */
         /* track A into the effects as OberVave always was (its program's chorus, delay, reverb); B-D are sent on purpose */
         set.mix_cho[0] = set.mix_dly[0] = set.mix_rev[0] = 127;
         set.fx_ok = 0;                          /* (fx_sync below takes them from track A's program) */
@@ -2017,6 +2151,7 @@ static void app_main(void)
     slot_lens_read();                           /* (every pattern's sounds; 1.5's patterns converted) */
     load_pattern(set.pat);
     slot_sel = set.pat;
+    pad_demo_enter();     /* boot into an immediately recognizable pad audition */
     ctl_panic = 0;
 
     ui_splash();
@@ -2056,6 +2191,12 @@ static void app_main(void)
         /* buttons, as sloopDX: tapped = its pages, held = a layer, HOME while held = locked open (any layer button
          * then only lets it go); PLAY, REC, OCT work inside a layer */
         b = fm1_input_edges(&rel);
+        if (pad_demo_active && (b & (1u << BTN_SAVE))) { say("PAD DEMO: NO FLASH SAVE"); b &= ~(1u << BTN_SAVE); }
+        if (b & (1u << BTN_SEL) && page == PG_BACKING && !layer) {
+            if (pad_demo_active) { pad_demo_exit(); say("DEMO OFF: SAVED SONG"); }
+            else { pad_demo_enter(); say("PAD DEMO: PLAY 3 NOTES"); }
+            dirty_hdr = dirty_page = dirty_tags = dirty_steps = 1;
+        }
         if (b & ~(1u << BTN_SAVE)) pat_save_armed = 0;   /* (SAVE PATTERN?: any other button says no) */
         {
             uint32_t mh = is_seq_page(page) && seq_view == SV_STEPS && !layer && (fm1_in.buttons >> BTN_SEL & 1u);
@@ -2092,7 +2233,7 @@ static void app_main(void)
                         } else if (LL[k] == L_EDIT && is_seq_page(page) && SV_ENTRY(seq_view)) seq_clear_cursor();
                         else if (LL[k] == L_EDIT) np = cycle_page(PG_OSC1, 5);
                         else if (LL[k] == L_FX) np = cycle_page(PG_CHORUS, 4);
-                        else if (LL[k] == L_GLO) np = page == PG_GLOBAL ? PG_VOICE : page == PG_VOICE ? PG_OUTPUT : PG_GLOBAL;
+                        else if (LL[k] == L_GLO) np = page == PG_BACKING ? PG_GLOBAL : page == PG_GLOBAL ? PG_VOICE : page == PG_VOICE ? PG_OUTPUT : PG_BACKING;
                         else if (is_seq_page(page)) {   /* in the sequencer: SAVE PATTERN? - SAVE again saves (as zp12:
                                                  * now; playing, at the stop), anything else: no */
                             if (pat_save_armed && fm1_ms - pat_save_t < 3000u) { pat_save_armed = 0; pat_save_to(set.pat); }
@@ -2121,7 +2262,7 @@ static void app_main(void)
 #if BOARD_SMK37
         smk_buttons(b, &dirty_steps);           /* FADER BANK, < > */
 #endif
-        ctl_click = set.click % NCLICK == CLICK_ON || (rec == REC_ON && set.click % NCLICK != CLICK_OFF);
+        ctl_click = !pad_demo_active && (set.click % NCLICK == CLICK_ON || (rec == REC_ON && set.click % NCLICK != CLICK_OFF));
         if (b & (3u << BTN_OCT_DOWN)) {
             if (layer == L_EDIT) {              /* EDIT + OCT- / OCT+: undo / redo (one level: a swap) */
                 if (undo_ok) { pattern_t tmp = pat; pat = undo_pat; undo_pat = tmp; pat_edited = 1; say(b & (1u << BTN_OCT_DOWN) ? "UNDO" : "REDO"); }
@@ -2146,7 +2287,8 @@ static void app_main(void)
         if (b & (1u << BTN_HOME)) {             /* HOME: PERFORM; while a layer is held: lock it open; locked: let it go */
             if (layer && !layer_lock) { layer_lock = 1; layer_used = 1; say("LOCKED: ITS BUTTON ENDS IT"); }
             else if (layer_lock) { layer = L_NONE; layer_lock = 0; dirty_page = dirty_steps = dirty_tags = 1; leds_q = 0xFFFFFFFFu; }
-            else if (page == PG_PERFORM) { np = PG_MIXER; mix_row = 0; }   /* again: the MIXER (VIBE's F1) */
+            else if (page == PG_PERFORM) { np = PG_BACKING; }  /* HOME cycles between the two primary pad screens */
+            else if (page == PG_BACKING) { np = PG_MIXER; mix_row = 0; }
             else if (page == PG_MIXER) {        /* there: its next row */
                 static const char *const MR[7] = {"LEVEL", "PAN", "SEND CHORUS", "SEND DELAY", "SEND REVERB", "SEND DRIVE", "MASTER"};
                 mix_row = (mix_row + 1u) % 7u; say(MR[mix_row]); dirty_page = dirty_steps = 1;
@@ -2197,7 +2339,7 @@ static void app_main(void)
             dirty_hdr = dirty_tags = dirty_page = 1;
         }
         if (save_armed && fm1_ms - save_t > 3000u) { save_armed = 0; dirty_page = dirty_hdr = 1; }
-        fx_sync();
+        if (!pad_demo_active) fx_sync();
         if (rec_wait) {                         /* REC waits for a track's bar: there it is */
             uint32_t w = rec_wait - 1u;
             if (rec != REC_ON || seq_trk != w) rec_wait = 0;
@@ -2205,6 +2347,7 @@ static void app_main(void)
         }
         if (req_page) { np = req_page - 1u; req_page = 0; if (np == page) dirty_page = dirty_steps = dirty_tags = 1; }
         if (np != page) {
+            if (np == PG_SEQ && pad_demo_active) pad_demo_exit();
             if (layer_lock) { layer = L_NONE; layer_lock = 0; }
             if (is_seq_page(np) != is_seq_page(page)) {   /* into / out of the full-screen sequencer: all new */
                 lcd_fill(0, 0, 240, 240, C_PANEL);
@@ -2218,7 +2361,13 @@ static void app_main(void)
         }
 
         /* encoders */
-        if ((e = fm1_enc_take(ENC_PRESETS)) != 0 && save_armed) {           /* SAVE armed: PRESETS picks the slot to save into ("save as") */
+        if (pad_demo_active && (e = fm1_enc_take(ENC_PRESETS)) != 0) {
+            /* Keep B arpeggiating while browsing A's other sounds! No
+             * trk_load: it writes saved-song selection settings. */
+            pad_demo_a_prog = pad_demo_step(pad_demo_a_prog, e);
+            pad_demo_sound(pad_demo_a_prog, &live_p[0]);
+            dirty_hdr = dirty_page = dirty_tags = dirty_steps = 1;
+        } else if ((e = fm1_enc_take(ENC_PRESETS)) != 0 && save_armed) {           /* SAVE armed: PRESETS picks the slot to save into ("save as") */
             save_to = (uint32_t)((int32_t)save_to + e + (int32_t)NPROG * 4) % NPROG;
             save_t = fm1_ms;
             dirty_hdr = 1;
@@ -2227,6 +2376,7 @@ static void app_main(void)
             dirty_hdr = dirty_page = dirty_tags = dirty_steps = 1;
         }
         if ((e = fm1_enc_take(ENC_ALGORITHM)) != 0) {   /* ALGORITHM: the track A-D (as sloopDX) */
+            if (pad_demo_active) pad_demo_exit();
             trk_select((uint32_t)clampi((int32_t)seq_trk + (e > 0 ? 1 : -1), 0, NTRK - 1));
         }
         if ((e = fm1_enc_take(ENC_SELECT)) != 0) {   /* SELECT (VIBE's DATA): STEPS the bar, the sequencer's other views and
@@ -2257,7 +2407,21 @@ static void app_main(void)
             int32_t p = PAGE[page].p[k];
             if ((e = fm1_enc_take(ENC_KNOB1 + k)) == 0) continue;
             if (e > 1 || e < -1) e *= 3;        /* a fast turn goes further */
-            if (page == PG_MIXER && !layer) {  /* the mixer: track k's LEVEL / PAN / SEND */
+            if (page == PG_BACKING && !layer) {
+                if (k == 0u) pad_arp_enabled = (uint32_t)clampi((int32_t)pad_arp_enabled + (e > 0 ? 1 : -1), 0, 1);
+                else if (k == 1u) {
+                    if (pad_demo_active) {
+                        pad_demo_b_level = (uint32_t)clampi((int32_t)pad_demo_b_level + e, 0, 127);
+                        ctl_mix_lvl[1] = (uint8_t)pad_demo_b_level; /* ONLY B; NEVER change A */
+                    } else {
+                        set.mix_lvl[1] = (uint8_t)clampi((int32_t)set.mix_lvl[1] + e, 0, 127);
+                        mix_apply(); set_dirty = 1; set_t = fm1_ms;
+                    }
+                }
+                else if (k == 2u) { if (pad_demo_active) pad_demo_track.div = (uint8_t)clampi((int32_t)pad_demo_track.div + (e > 0 ? 1 : -1), 0, NDIV - 1); else { pat.trk[1].div = (uint8_t)clampi((int32_t)pat.trk[1].div + (e > 0 ? 1 : -1), 0, NDIV - 1); pat_edited = 1; dirty_steps = 1; } }
+                else pad_arp_octave = clampi(pad_arp_octave + (e > 0 ? 1 : -1), -2, 2);
+                dirty_page = dirty_hdr = 1;
+            } else if (page == PG_MIXER && !layer) {  /* the mixer: track k's LEVEL / PAN / SEND */
                 if (mix_row == 6u) {            /* (VIBE) MASTER */
                     if (k == 0) set.m_vol = (uint8_t)clampi((int32_t)set.m_vol + e, 0, 127);
                     else if (k == 1) set.m_dj = (uint8_t)clampi((int32_t)set.m_dj + e, 0, 128);
@@ -2468,7 +2632,7 @@ static void app_main(void)
 #endif
             if (seq_shown() || rec || rec_down || layer) draw_hints();   /* the sequencer's hints instead of the voice LEDs */
             else if (q != leds_q) { leds_q = q; draw_leds(); }
-            if (page == PG_GLOBAL && fm1_ms - t_page >= 250u) dirty_page = 1;
+            if ((page == PG_GLOBAL || page == PG_BACKING) && fm1_ms - t_page >= 250u) dirty_page = 1;
         }
         if (seq_shown() || rec) {               /* the sequencer's strip instead of the scope */
             if (ui_seq_ticks != ticks_seen) { ticks_seen = ui_seq_ticks; dirty_steps = 1; }

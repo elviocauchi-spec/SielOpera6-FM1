@@ -141,7 +141,7 @@ static void cv_stripes(int32_t y0, int32_t band, int32_t gap, int32_t x_to, int3
 
 static void draw_logo_small(int32_t x, int32_t y)   /* "OBERVAVE" in FONT_S with the bands through the lower half */
 {
-    cv_text(x, y, &FONT_S, "OBERVAVE", C_CREAM);
+    cv_text(x, y, &FONT_S, "PAD LAB", C_CREAM);
     cv_stripes(y + 10, 2, 0, 0, 1);
 }
 
@@ -165,7 +165,7 @@ static void ui_header(uint32_t prog, const uint8_t *name, uint32_t edited, const
     cv_text(54, 4, &FONT_S, tl, c);
     cv_text(66, 4, &FONT_S, n, trk ? c : C_CREAM);
     cv_text(54, 22, &FONT_S, tags, C_DIMT);
-    draw_logo_small(240 - 4 - text_w(&FONT_S, "OBERVAVE"), 4);
+    draw_logo_small(240 - 4 - text_w(&FONT_S, "PAD LAB"), 4);
     cv_rect(0, 42, 240, 1, C_RULE);
     cv_blit(0, 0);
 }
@@ -524,42 +524,20 @@ static void ui_seq_lines(const char *l1, uint16_t c1, const char *l2, const char
  * ~2.4 s, polls meanwhile. Both layers are RLE over one palette; they are read in step, pixel by pixel */
 #include "obv_splash.h"
 #define SPLASH_Y 70
-static void splash_frame(uint32_t fade, int32_t x_to, uint32_t sub)
-{
-    const uint8_t *a = SPLASH_RLE0, *b = SPLASH_RLE1;     /* the letters; the letters with the bands */
-    uint32_t ra = 0, rb = 0, ia = 0, ib = 0, x = 0, y = 0, n = SPLASH_W * SPLASH_H, i;
-    cv_begin(240, SPLASH_H + 40, C_PANEL);
-    for (i = 0; i < n; i++) {
-        uint16_t c;
-        if (!ra) { ra = *a++; ia = *a++; }
-        if (!rb) { rb = *b++; ib = *b++; }
-        ra--; rb--;
-        c = SPLASH_PAL[(int32_t)x < x_to ? ib : ia];
-        if (c != C_PANEL)
-            cv_px[y * 240u + x] = swap16(fade >= 256u ? c : blend565(C_PANEL, c, fade));
-        if (++x == SPLASH_W) { x = 0; y++; }
-    }
-    if (sub) {                                      /* the line under the logo, as in assets/logo.png, in two rows */
-        const char *t1 = "4-TRACK ANALOG POLY", *t2 = "M-VAVE FM-1";
-        uint16_t c = sub >= 256u ? C_AMBER : blend565(C_PANEL, C_AMBER, sub);
-        cv_text((240 - text_w(&FONT_S, t1)) / 2, SPLASH_H + 14, &FONT_S, t1, c);
-        cv_text((240 - text_w(&FONT_S, t2)) / 2, SPLASH_H + 28, &FONT_S, t2, c);
-    }
-    cv_blit(0, SPLASH_Y);
-}
-
+/* OPERA PAD LAB: immediate, readable startup with no inherited OberVave artwork.
+ * One 124-pixel canvas strip is used to stay inside the fixed LCD memory budget. */
 static void ui_splash(void)
 {
-    /* the strike: dark, two short flashes, a dip, then it holds (per 40 ms frame, 0..256) */
-    static const uint16_t STRIKE[12] = {0, 90, 20, 0, 200, 60, 30, 256, 180, 256, 256, 256};
-    uint32_t t0 = fm1_ms, k;
+    uint32_t t0 = fm1_ms;
     lcd_fill(0, 0, 240, 240, C_PANEL);
-    for (k = 0; k < 30u; k++) {
-        uint32_t fade = k < 12u ? STRIKE[k] : 256u, sub = k < 16u ? 0u : (k - 16u) * 32u;
-        int32_t x_to = k < 10u ? 0 : (int32_t)((k - 10u) * (k - 10u) * 240u / 196u) + 2;   /* eases in, 10 .. 24 */
-        splash_frame(fade, x_to, sub);
-        while (fm1_ms - t0 < 40u * (k + 1u)) platform_poll();
-    }
-    while (fm1_ms - t0 < 2400u) platform_poll();     /* it stands for a while: 2.4 s from power-on */
+    cv_begin(240, 124, C_PANEL);
+    cv_rect(24, 12, 192, 1, C_RULE);
+    cv_text((240 - text_w(&FONT_S, "OPERA")) / 2, 23, &FONT_S, "OPERA", C_CREAM);
+    cv_text((240 - text_w(&FONT_S, "P A D   L A B")) / 2, 48, &FONT_S, "P A D   L A B", C_AMBER);
+    cv_rect(24, 75, 192, 1, C_RULE);
+    cv_text((240 - text_w(&FONT_S, "LIVE CHORD FOLLOW")) / 2, 84, &FONT_S, "LIVE CHORD FOLLOW", C_CREAM);
+    cv_text((240 - text_w(&FONT_S, "M-VAVE FM-1")) / 2, 105, &FONT_S, "M-VAVE FM-1", C_DIMT);
+    cv_blit(0, 58);
+    while (fm1_ms - t0 < 900u) platform_poll();
     lcd_fill(0, 0, 240, 240, C_PANEL);
 }
