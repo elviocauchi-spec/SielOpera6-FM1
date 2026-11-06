@@ -273,7 +273,7 @@ static void v1_engine_init(v1_engine_t *e,const v1_patch_t *p) {
     e->gate_smooth=32767;
 }
 static void v1_note_on(v1_engine_t *e,uint8_t note,uint8_t vel) {
-    uint32_t i,j,k,choice=0,oldest=0xffffffffu;
+    uint32_t i,j,choice=0,oldest=0xffffffffu;
     for(i=0;i<V1_VOICES;i++) {
         if(!e->voices[i].active) {choice=i;break;}
         if(e->voices[i].a.level<(int32_t)oldest) {oldest=(uint32_t)e->voices[i].a.level;choice=i;}
@@ -327,7 +327,7 @@ static void v1_hold(v1_engine_t *e,uint8_t on,uint8_t note,uint8_t vel) {
         }
     }
 }
-static void v1_arp_tick(v1_engine_t *e,uint32_t bpm) {
+static void v1_arp_tick(v1_engine_t *e) {
     uint32_t i,j,idx,oct,mode=e->patch.arp_mode,count=e->held_count;
     if(mode==V1_ARP_OFF || !count)return;
     if(e->arp_active){v1_note_off(e,e->arp_note);e->arp_active=0;}
@@ -350,13 +350,15 @@ static void v1_arp_tick(v1_engine_t *e,uint32_t bpm) {
 static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm) {
     uint32_t f,i,j,step_frames=v1_arp_step_frames(bpm,e->patch.arp_rate);
     uint32_t gate_frames=v1_arp_step_frames(bpm,e->patch.trance_rate);
+    uint32_t delay_frames=v1_quarter(e,bpm)*3u/4u;
+    if(delay_frames>32767u) delay_frames=32767u;
     const v1_patch_t *p=&e->patch;
     if(!step_frames)step_frames=1;
     if(!gate_frames)gate_frames=1;
     for(f=0;f<n;f++) {
         int32_t dry=0, left,right;
         if(p->arp_mode!=V1_ARP_OFF){
-            if(e->arp_phase==0 && e->held_count)v1_arp_tick(e,bpm);
+            if(e->arp_phase==0 && e->held_count)v1_arp_tick(e);
             if(e->arp_active && e->arp_phase > (step_frames*(uint32_t)(p->arp_gate+1u))/128u) {
                 v1_note_off(e,e->arp_note);e->arp_active=0;
             }
@@ -374,7 +376,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         }
         for(i=0;i<V1_VOICES;i++) {
             v1_voice_t *v=&e->voices[i];
-            int32_t s=0,fe,amp,cut,fc;
+            int32_t s=0,fe,amp,cut;
             if(!v->active)continue;
             amp=v1_env_sample(&v->a,&p->amp);
             fe=v1_env_sample(&v->f,&p->filter_env);
@@ -412,10 +414,8 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         left=dry+((chl*(int32_t)p->chorus)>>8);
         right=dry+((chr*(int32_t)p->chorus)>>8);
         uint32_t dl=e->delay_pos&32767u;
-        uint32_t dt=v1_quarter(e,bpm)*3u/4u;
-        if(dt>32767u)dt=32767u;
-        int32_t oldl=e->delay_mem[0][(dl-dt)&32767u];
-        int32_t oldr=e->delay_mem[1][(dl-dt)&32767u];
+        int32_t oldl=e->delay_mem[0][(dl-delay_frames)&32767u];
+        int32_t oldr=e->delay_mem[1][(dl-delay_frames)&32767u];
         e->delay_mem[0][dl]=(int16_t)v1_sat16(left+((oldr*(int32_t)p->delay_feedback)>>7));
         e->delay_mem[1][dl]=(int16_t)v1_sat16(right+((oldl*(int32_t)p->delay_feedback)>>7));
         e->delay_pos++;
