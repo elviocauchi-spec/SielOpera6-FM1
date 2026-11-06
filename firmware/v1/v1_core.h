@@ -406,6 +406,7 @@ static void v1_arp_tick(v1_engine_t *e) {
     e->arp_active=1;e->arp_pos++;
 }
 static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm) {
+    const v1_patch_t *p=&e->patch;
     uint32_t f,i,j,step_frames=v1_arp_step_frames(bpm,e->patch.arp_rate);
     uint32_t gate_frames=v1_arp_step_frames(bpm,e->patch.trance_rate);
     const uint32_t quarter=v1_quarter(e,bpm);
@@ -423,7 +424,6 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
     }
     if(delay_frames>32767u) delay_frames=32767u;
     if(!delay_frames)delay_frames=1u;
-    const v1_patch_t *p=&e->patch;
     /* Block-derived control rates keep expensive integer division OUT of
        the 44.1kHz sample loop. The 256-frame ISR has ~5.8ms deadline. */
     for(vi=0;vi<3;vi++) {
