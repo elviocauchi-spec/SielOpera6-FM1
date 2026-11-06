@@ -361,7 +361,14 @@ static void v1_param_change(uint32_t pg,uint32_t k,int32_t n) {
         if(k==2)vg1_adj_rate(&p->vg_arp.speed,1,n);
     } else if(pg==UI_GLIDE){
         if(k==0)vg1_adj_u8(&p->vg_glide.on,n,0,1);
-        if(k==1)vg1_adj_rate(&p->vg_glide.speed,0,n);
+        if(k==1) {
+            /* Original Vanguard permits INSTANT + 1/1 through 1/64. */
+            uint32_t d=p->vg_glide.speed.denominator;
+            int32_t index=0;
+            if(d) {index=1;while(d>1u&&index<7){d>>=1u;index++;}}
+            index=v1_clip(index+n,0,7);
+            p->vg_glide.speed.denominator=(uint8_t)(index?1u<<(index-1):0u);
+        }
         if(k==2)vg1_adj_rate(&p->vg_glide.speed,1,n);
     } else if(pg==UI_PITCH) {
         /* Vanguard's pitchbend/aftertouch parameters are separate from LFO1 */
@@ -447,6 +454,7 @@ static void v1_panel_draw(void) {
         else if(pg==UI_FILTER&&k==0) {
             v1_num(tmp,val);value=tmp; /* mode number, full label in status area */
         }
+        else if(pg==UI_GLIDE&&k==1&&!val)value="INSTANT";
         else if(pg==UI_ARP&&k==1)value=vg1_arp_name[val%VG1_ARP_N_MODES];
         else if(pg==UI_DELAY&&k==1)value=vg1_delay_name[val%VG1_N_DELAY_MODES];
         else if(pg==UI_GATE_STEPS_L||pg==UI_GATE_STEPS_R){v1_num(tmp,val);value=tmp;}
