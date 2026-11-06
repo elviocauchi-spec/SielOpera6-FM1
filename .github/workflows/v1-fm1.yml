@@ -1,0 +1,59 @@
+name: V-1 FM1 independent synth validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/v1-fm1-engine
+    paths:
+      - 'firmware/v1/**'
+      - 'tests/v1_core_smoke.c'
+      - 'tools/build.py'
+      - '.github/workflows/v1-fm1.yml'
+
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile new DSP engine independently of firmware
+        run: gcc -std=c11 -O2 -Wall -Wextra -o /tmp/v1_smoke tests/v1_core_smoke.c
+      - name: Test voice lifecycle, supersaw, 16-step gate, and arpeggiator
+        run: /tmp/v1_smoke
+
+  firmware:
+    needs: host
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: python3 -m pip install Pillow
+      - name: Download JieLi compiler
+        run: sh tools/get_toolchain.sh
+      - name: Download pinned AC79 SDK
+        shell: bash
+        run: |
+          set -e
+          for attempt in 1 2 3; do
+            rm -rf "$HOME/fw-AC79_AIoT_SDK"
+            if timeout 180s git clone --depth 1 --single-branch \
+              --branch AC79NN_SDK_V1.2.1_2023-12-13 \
+              https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git \
+              "$HOME/fw-AC79_AIoT_SDK"; then
+              break
+            fi
+          done
+          test -f "$HOME/fw-AC79_AIoT_SDK/cpu/wl82/tools/uboot.boot"
+      - name: Build separate V-1 FM1 firmware
+        run: BOARD=fm1 V1_FM1=1 sh build.sh
+      - name: Verify output
+        run: test -s build/v1-fm1.fwsc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: V-1-FM1-experimental
+          path: build/v1-fm1.fwsc
+          if-no-files-found: error
