@@ -45,10 +45,25 @@ def parse(data: bytes, offset: int = 0, depth: int = 0):
     if len(data) - offset < 28 or data[offset:offset+4] != MAGIC:
         raise PresetFormatError(f"not a VST2 CcnK preset/bank at byte {offset}")
     length = uint32(data, offset+4)
-    end = offset + 8 + length
-    if end > len(data) or end <= offset+28:
-        raise PresetFormatError(f"invalid VST2 record length at {offset}: {length}")
     kind = data[offset+8:offset+12]
+    # Some valid reFX Vanguard 1 VGRD-bank exports leave the VST2
+    # byteSize field at ZERO, both for FxBk and nested FxCk records.
+    # Infer each FxCk's exact length from its 92-float param count
+    # and the FxBk's length from the parsed child records.
+    # This compatibility rule is scoped to the known VGRD plugin ID.
+    plugin_id_bytes = data[offset+16:offset+20]
+    if length == 0 and plugin_id_bytes == b"VGRD" and kind in (b"FxBk", b"FxCk"):
+        if kind == b"FxCk":
+            param_count = uint32(data, offset+24)
+            if param_count > MAX_PARAMS:
+                raise PresetFormatError("VGRD parameter count exceeds limit")
+            end = offset+56+param_count*4
+        else:
+            end = len(data)
+    else:
+        end = offset + 8 + length
+    if end > len(data) or end < offset+28:
+        raise PresetFormatError(f"invalid VST2 record length at {offset}: {length}")
     if kind not in KINDS:
         raise PresetFormatError(f"unsupported FX magic {kind!r} at byte {offset}")
     version = uint32(data, offset+12)
@@ -101,6 +116,8 @@ def parse(data: bytes, offset: int = 0, depth: int = 0):
                     raise PresetFormatError(f"bank program {i} belongs to different plugin")
                 programs.append(p)
                 pos += p["length"]
+            if pos != end:
+                raise PresetFormatError("unexpected bytes after bank's listed programs")
             result["programs"] = programs
         else:
             chunk_size = uint32(data, pos)
