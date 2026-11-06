@@ -123,7 +123,7 @@ static void seq_release_t(uint32_t t)
 }
 static uint32_t seq_note(uint32_t t, const step_t *s, uint32_t i, int32_t transp)
 {
-    if (t == 1u && pad_follow_enabled && pad_chord.valid)
+    if (t == 1u && pad_follow_enabled && (pad_chord_harmony & 0x100u))
         return pad_chord_pitch((int32_t)s->note[i] + transp);
     return (uint32_t)clampi((int32_t)s->note[i] + transp, 1, 127);
 }
@@ -131,7 +131,7 @@ static void seq_sound(uint32_t t, const step_t *s, int32_t transp)
 {
     seqrun_t *r = &sr[t];
     uint32_t i;
-    if (t == 1u && pad_follow_enabled && !pad_chord.valid) return;
+    if (t == 1u && pad_follow_enabled && !(pad_chord_harmony & 0x100u)) return;
     for (i = 0; i < SEQ_CHORD && s->note[i] && r->nsnd < SEQ_CHORD; i++) {
         uint32_t n = seq_note(t, s, i, transp);
         if (seq_live(t, n) || ctl_rec_mute >> t & 1u) continue;
@@ -158,7 +158,7 @@ static void seq_tie_into(uint32_t t, const step_t *s, int32_t transp, uint32_t p
         else if (!seq_live(t, r->snd[i])) voice_release(t, r->snd[i], 1);
     }
     r->nsnd = j;
-    if (!play || (t == 1u && pad_follow_enabled && !pad_chord.valid)) return;
+    if (!play || (t == 1u && pad_follow_enabled && !(pad_chord_harmony & 0x100u))) return;
     for (i = 0; i < SEQ_CHORD && s->note[i] && r->nsnd < SEQ_CHORD; i++) {
         uint32_t m = seq_note(t, s, i, transp);
         for (j = 0; j < keep && r->snd[j] != m; j++) ;
