@@ -1105,8 +1105,17 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         if(left>32767||left<-32767||right>32767||right<-32767)
             e->diag_final_over++;
 #endif
+        /* This is the FM1's sole audio producer. On hardware, write
+           EVERY frame directly instead of reading/adding to a zeroed
+           DMA half. The platform can then omit 512 memory clears/IRQ.
+           Host/legacy renderers retain additive compatibility. */
+#ifdef VG1_RENDER_OVERWRITE
+        out[f*2u]=left;
+        out[f*2u+1u]=right;
+#else
         out[f*2u]+=left;
         out[f*2u+1u]+=right;
+#endif
         /* Keep the unsaturated peak for post-build headroom assessment. */
         uint32_t peakl=(uint32_t)(left<0?-left:left);
         uint32_t peakr=(uint32_t)(right<0?-right:right);
