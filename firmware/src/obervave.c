@@ -267,6 +267,7 @@ static uint32_t trk_silent(uint32_t t) { return ctl_mix_off >> (t % NTRK) & 1u; 
  * Presets and sequences on flash remain unchanged. Turn SELECT on the BACKING
  * page to leave/re-enter the live demo. */
 static patch_t pad_demo_saved[2];
+static uint32_t pad_demo_saved_edited[2];
 static void pad_demo_apply_mix(void)
 {
     if (!pad_demo_active) return;
@@ -285,6 +286,8 @@ static void pad_demo_enter(void)
     if (pad_demo_active) return;
     pad_demo_saved[0] = live_p[0];
     pad_demo_saved[1] = live_p[1];
+    pad_demo_saved_edited[0] = trk_edited[0];
+    pad_demo_saved_edited[1] = trk_edited[1];
     patch_from_factory(&live_p[0], &FACT_PAD_LAB[0]); /* pad: CELESTIAL */
     patch_from_factory(&live_p[1], &FACT_PAD_LAB[3]); /* backing: SEQ DUST */
     pad_demo_b_level = 86u;
@@ -307,6 +310,8 @@ static void pad_demo_exit(void)
     pad_demo_active = 0u;
     live_p[0] = pad_demo_saved[0];
     live_p[1] = pad_demo_saved[1];
+    trk_edited[0] = pad_demo_saved_edited[0];
+    trk_edited[1] = pad_demo_saved_edited[1];
     mix_apply();             /* restore the exact stored mixer configuration */
 }
 
@@ -798,8 +803,8 @@ static void draw_header(void)
         if (pad_chord.valid) {
             scat(tags, ROOT[pad_chord.root % 12u]);
             scat(tags, pad_chord.third == 3u ? "m" : pad_chord.third == 2u ? "sus2" : pad_chord.third == 5u ? "sus4" : "maj");
-        } else scat(tags, "PLAY A CHORD");
-        if (pad_demo_active) scat(tags, pad_follow_enabled ? " B:FOLLOW" : " B:FIXED");
+        } else scat(tags, pad_demo_active ? "3-NOTE CHORD" : "PLAY A CHORD");
+        if (pad_demo_active && pad_chord.valid) scat(tags, pad_follow_enabled ? " B:FOLLOW" : " B:FIXED");
         else scat(tags, pad_follow_enabled ? "  FOLLOW" : "  FIXED");
         if (ctl_seq_run && !pad_demo_active) scat(tags, "  PLAY");
         ui_header(pad_demo_active ? 70u : ed_prog(), ed_patch(0)->v + NPARAM, ed_edited(), tags, seq_trk);
@@ -1031,6 +1036,9 @@ static void draw_hints(void)
     else if (layer == L_GLO) ui_hints(rec ? "1-4: RECORD A-D  5-8: MUTE" : "1-4: START/STOP A-D 5-8: MUTE", "9-12: SOLO  G5: TAP TEMPO", C_AMBER);
     else if (layer == L_SAVE) ui_hints("WHITE 1-8: GO  BLACK 1-8: COPY", "+ " NM_SELBTN " PRESSED: NEW SOUND", C_AMBER);
     else if (layer == L_FX) ui_hints("KNOBS: CHORUS DELAY REVERB", "AND THE DELAY'S TIME", C_AMBER);
+    else if (pad_demo_active && page == PG_BACKING) ui_hints("SELECT: EXIT PAD DEMO", "LEVEL / SPEED / FOLLOW", C_AMBER);
+    else if (pad_demo_active) ui_hints("PLAY A THREE-NOTE CHORD", "BACKING FOLLOWS YOUR CHORD", C_CREAM);
+    else if (page == PG_BACKING) ui_hints("SELECT: ENTER PAD DEMO", "PRESETS: YOUR SAVED SOUNDS", C_AMBER);
     else ui_hints(ROT[r][0], ROT[r][1], C_CREAM);
 }
 
