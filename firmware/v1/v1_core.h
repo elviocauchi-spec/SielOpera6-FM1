@@ -32,7 +32,7 @@ typedef struct {
     uint8_t master;
 } v1_patch_t;
 
-typedef struct { uint32_t ph[5], inc[5]; uint32_t rng; } v1_osc_state_t;
+typedef struct { uint32_t ph[5], inc[5], base_inc[5]; uint32_t rng; } v1_osc_state_t;
 typedef struct { int32_t ic1, ic2; } v1_svf_state_t;
 typedef struct { uint8_t stage; int32_t level, release_step; } v1_env_state_t;
 typedef struct {
@@ -290,7 +290,7 @@ static void v1_note_on(v1_engine_t *e,uint8_t note,uint8_t vel) {
         for(j=0;j<V1_SUPER;j++) {
             int32_t dist=(int32_t)j-2;
             int32_t cents=dist*((int32_t)p->detune*40/127);
-            o->inc[j]=v1_detune_inc(base,cents);
+            o->base_inc[j]=o->inc[j]=v1_detune_inc(base,cents);
             o->ph[j]=v1_rand(&e->rng);
         }
     }
@@ -378,6 +378,17 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             v1_voice_t *v=&e->voices[i];
             int32_t s=0,fe,amp,cut;
             if(!v->active)continue;
+            /* Pitch modulation applies to ALL three oscillators, including
+             * every supersaw component. No oscillator's base pitch drifts. */
+            if((e->frames&31u)==0u) {
+                uint32_t oi,si;
+                int32_t cents=((int32_t)p->lfo_pitch*e->lfo[0])>>16;
+                for(oi=0;oi<3;oi++) {
+                    uint32_t count=p->osc[oi].wave==V1_SUPERSAW?5u:1u;
+                    for(si=0;si<count;si++)
+                        v->osc[oi].inc[si]=v1_detune_inc(v->osc[oi].base_inc[si],cents);
+                }
+            }
             amp=v1_env_sample(&v->a,&p->amp);
             fe=v1_env_sample(&v->f,&p->filter_env);
             if(!amp && !v->gate){v->active=0;continue;}
