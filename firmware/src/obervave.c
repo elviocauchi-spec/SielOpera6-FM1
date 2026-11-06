@@ -198,6 +198,44 @@ static void prog_get(uint32_t n, patch_t *p)    /* program n: the user's, else t
     else patch_from_factory(p, n < NFACT ? &FACTORY[n] : n < NFACT + NVIBE ? &FACT_VIBE[n - NFACT] : n < NFACT + NVIBE + NPAD_LAB ? &FACT_PAD_LAB[n - NFACT - NVIBE] : &FACT_INIT);
 }
 
+/* PAD LAB has an actual factory pad bank, independent of stale user-saved
+ * content in the same program slots. The preview is RAM ONLY: stored user
+ * programs always win in normal mode; the audition never overwrites them.
+ * The rest of PRESETS includes the existing factory/user sounds. */
+static void pad_demo_sound(uint32_t n, patch_t *p)
+{
+    n %= NPROG;
+    if (n >= NFACT + NVIBE && n < NFACT + NVIBE + NPAD_LAB)
+        patch_from_factory(p, &FACT_PAD_LAB[n - NFACT - NVIBE]);
+    else prog_get(n, p);
+}
+
+/* Skip repeated empty INIT slots, otherwise 19 consecutive PRESETS positions
+ * appear to have exactly the same sound. Still expose a slot if the user has
+ * stored a real patch there, and keep legacy sounds accessible. */
+static uint32_t pad_demo_slot_valid(uint32_t n)
+{
+    if (psect[n / PS_N].used[n % PS_N]) return 1u;
+    if (n == 31u) return 0u;              /* factory #32: empty INIT */
+    return n < NFACT + NVIBE + NPAD_LAB;
+}
+static uint32_t pad_demo_step(uint32_t previous, int32_t delta)
+{
+    uint32_t count;
+    int32_t dir = delta < 0 ? -1 : 1, n = (int32_t)(previous % NPROG);
+    if (delta > (int32_t)NPROG) delta = (int32_t)NPROG;
+    if (delta < -(int32_t)NPROG) delta = -(int32_t)NPROG;
+    count = (uint32_t)(delta < 0 ? -delta : delta);
+    while (count--) {
+        uint32_t tries;
+        for (tries = 0u; tries < NPROG; tries++) {
+            n = (n + dir + (int32_t)NPROG) % (int32_t)NPROG;
+            if (pad_demo_slot_valid((uint32_t)n)) break;
+        }
+    }
+    return (uint32_t)n;
+}
+
 static void prog_put(uint32_t n, const patch_t *p)   /* program n is the user's now; saved when quiet */
 {
     n %= NPROG;
@@ -222,7 +260,7 @@ static void fx_sync(void)                       /* the effects as edited (FX pag
 }
 static int is_a_only(uint32_t p) { return p >= P_CHO_RATE && p <= P_REV_MIX; }   /* (the effects: one chain; each sound has its arp) */
 static patch_t *ed_patch(uint32_t p) { return is_a_only(p) ? &live_p[0] : &live_p[seq_trk % NTRK]; }
-static uint32_t ed_prog(void) { return trk_prog[seq_trk % NTRK]; }
+static uint32_t ed_prog(void) { return pad_demo_active ? pad_demo_a_prog : trk_prog[seq_trk % NTRK]; }
 static uint32_t ed_edited(void) { return trk_edited[seq_trk % NTRK]; }
 
 static void trk_load(uint32_t t, uint32_t n)    /* track t: program n */
@@ -292,7 +330,7 @@ static void pad_demo_enter(void)
     pad_demo_saved[1] = live_p[1];
     pad_demo_saved_edited[0] = trk_edited[0];
     pad_demo_saved_edited[1] = trk_edited[1];
-    patch_from_factory(&live_p[0], &FACT_PAD_LAB[0]); /* pad: CELESTIAL */
+    patch_from_factory(&live_p[0], &FACT_PAD_LAB[0]); /* factory CELESTIAL, not an old user INIT */
     patch_from_factory(&live_p[1], &FACT_PAD_LAB[3]); /* backing: MIST FLOW */
     pad_demo_a_prog = 70u;
     pad_demo_b_level = PAD_DEMO_B_LEVEL;
@@ -2326,8 +2364,8 @@ static void app_main(void)
         if (pad_demo_active && (e = fm1_enc_take(ENC_PRESETS)) != 0) {
             /* Keep B arpeggiating while browsing A's other sounds! No
              * trk_load: it writes saved-song selection settings. */
-            pad_demo_a_prog = (uint32_t)((int32_t)pad_demo_a_prog + e + (int32_t)NPROG * 16) % NPROG;
-            prog_get(pad_demo_a_prog, &live_p[0]);
+            pad_demo_a_prog = pad_demo_step(pad_demo_a_prog, e);
+            pad_demo_sound(pad_demo_a_prog, &live_p[0]);
             dirty_hdr = dirty_page = dirty_tags = dirty_steps = 1;
         } else if ((e = fm1_enc_take(ENC_PRESETS)) != 0 && save_armed) {           /* SAVE armed: PRESETS picks the slot to save into ("save as") */
             save_to = (uint32_t)((int32_t)save_to + e + (int32_t)NPROG * 4) % NPROG;
