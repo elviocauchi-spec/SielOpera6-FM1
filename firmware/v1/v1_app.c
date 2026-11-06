@@ -8,6 +8,8 @@ static void app_idle(void);
 static void vg1_audio_isr_load(uint32_t elapsed_ticks,uint32_t frames);
 #define LCD_IDLE() app_idle()
 #define PLATFORM_AUDIO_ISR_LOAD(ticks,frames) vg1_audio_isr_load((ticks),(frames))
+#define PLATFORM_AUDIO_RENDER_OVERWRITES 1
+#define VG1_RENDER_OVERWRITE 1
 #include "../src/platform.c"
 #include "v1_core.h"
 
