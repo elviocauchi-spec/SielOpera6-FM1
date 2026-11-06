@@ -40,7 +40,7 @@
       .bend_range=2,.vib_speed=LFO,.vib_depth=12, \
       .osc={O(W0,L0,PW0,0,S0,0),O(W1,L1,PW1,0,S1,0),O(W2,L2,PW2,0,S2,0)}, \
       .amp=ADS(A,D,S,R),.filter_env=ADS(FA,FD,FS,FR), \
-      .cutoff=CUT,.resonance=RES,.filter_type=FTYPE,.master=MASTER }, 
+      .cutoff=CUT,.resonance=RES,.filter_type=FTYPE,.master=MASTER }
 static const v1_patch_t V1_FACTORY[V1_PRESETS] = {
     { .name="HEAVEN LEAD",
       .vg_osc={.retrig=0,.fat=49,.vcs=6,.age=7}, .vg_lfo={{.speed=5,.detune=6},{.speed=5,.detune=-4},{.speed=3,.cutoff=4}},
