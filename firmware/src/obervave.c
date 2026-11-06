@@ -23,7 +23,7 @@ static void app_idle(void);
 #include "obv_engine.h"
 #include "pad_chord.h"
 /* Preview stays RAM-only: no flash patch/sequence format changes. */
-static uint32_t pad_demo_active, pad_demo_b_level = 86u;
+static uint32_t pad_demo_active, pad_demo_b_level = 80u;
 #include "obv_seq.h"
 #include "obv_patches.h"
 
@@ -289,9 +289,9 @@ static void pad_demo_enter(void)
     pad_demo_saved_edited[0] = trk_edited[0];
     pad_demo_saved_edited[1] = trk_edited[1];
     patch_from_factory(&live_p[0], &FACT_PAD_LAB[0]); /* pad: CELESTIAL */
-    patch_from_factory(&live_p[1], &FACT_PAD_LAB[3]); /* backing: SEQ DUST */
-    pad_demo_b_level = 86u;
-    pad_demo_track.div = D_8;
+    patch_from_factory(&live_p[1], &FACT_PAD_LAB[3]); /* backing: MIST FLOW, no percussive ticks */
+    pad_demo_b_level = 80u;
+    pad_demo_track.div = D_4;
     pad_follow_enabled = 1u;
     pad_follow_octave = 1;
     pad_demo_active = 1u;
@@ -299,6 +299,8 @@ static void pad_demo_enter(void)
     ctl_panic = 1u;
     ctl_trk_on |= 2u;
     ctl_seq_restart = 1u;
+    ctl_count = 0u;
+    ctl_click = 0u;         /* NEVER inherit a user-enabled metronome in PAD LAB */
     ctl_seq_run = 1u;       /* backing waits silently for a played triad */
     pad_demo_apply_mix();
 }
@@ -2216,7 +2218,7 @@ static void app_main(void)
 #if BOARD_SMK37
         smk_buttons(b, &dirty_steps);           /* FADER BANK, < > */
 #endif
-        ctl_click = set.click % NCLICK == CLICK_ON || (rec == REC_ON && set.click % NCLICK != CLICK_OFF);
+        ctl_click = !pad_demo_active && (set.click % NCLICK == CLICK_ON || (rec == REC_ON && set.click % NCLICK != CLICK_OFF));
         if (b & (3u << BTN_OCT_DOWN)) {
             if (layer == L_EDIT) {              /* EDIT + OCT- / OCT+: undo / redo (one level: a swap) */
                 if (undo_ok) { pattern_t tmp = pat; pat = undo_pat; undo_pat = tmp; pat_edited = 1; say(b & (1u << BTN_OCT_DOWN) ? "UNDO" : "REDO"); }
