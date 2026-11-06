@@ -250,20 +250,27 @@ static const uint8_t PF_PAD_AURORA[] = {
     P_DLY_MIX, 24, P_REV_SIZE, 114, P_REV_DAMP, 42, P_REV_MIX, 82,
     255u
 };
-static const uint8_t PF_PAD_SEQDUST[] = {
-    P_MODE, M_POLY, P_O1_WAVE, W_PLS, P_O1_PW, 49, P_O1_LVL, 94,
-    P_O2_WAVE, W_SAW, P_O2_LVL, 29, P_O2_SEMI, 24, P_O2_FINE, 70,
-    P_FTYPE, F_LP12, P_CUTOFF, 59, P_RESO, 12, P_FENV_AMT, 88,
-    P_FA, 0, P_FD, 42, P_FS, 10, P_FR, 45,
-    P_AA, 7, P_AD, 38, P_AS, 0, P_AR, 38,
-    P_VINTAGE, 10, P_SPREAD, 32, P_VOLUME, 72,
-    P_ARP_MODE, A_OFF, 255u
+/* Slow, breathy chord-follow layer. Never a pluck: hard transients in the
+ * earlier SEQ DUST patch sounded like rhythmic clicks on the real FM-1.
+ * 75 is roughly 170 ms attack, 95 ~830 ms release. */
+static const uint8_t PF_PAD_MISTFLOW[] = {
+    P_MODE, M_POLY, P_ARP_MODE, A_OFF,
+    P_O1_WAVE, W_PLS, P_O1_PW, 55, P_O1_LVL, 83,
+    P_O2_WAVE, W_SAW, P_O2_LVL, 53, P_O2_SEMI, 24, P_O2_FINE, 68,
+    P_NOISE, 5, P_SYNC, 0, P_XMOD, 0, P_DRIVE, 0,
+    P_FTYPE, F_LP24, P_CUTOFF, 56, P_RESO, 6, P_FENV_AMT, 64,
+    P_FA, 66, P_FD, 92, P_FS, 92, P_FR, 95,
+    P_AA, 75, P_AD, 96, P_AS, 111, P_AR, 95,
+    P_LFO_SHAPE, L_TRI, P_LFO_RATE, 25, P_LFO_PHASE, LP_SPREAD,
+    P_LFO_FLT, 38, P_LFO_PWM, 42, P_LFO_PITCH, 2,
+    P_VINTAGE, 18, P_SPREAD, 74, P_VOLUME, 104,
+    255u
 };
 static const factory_t FACT_PAD_LAB[] = {
     {"CELESTIAL", PF_PAD_CELESTIAL},
     {"NIGHTTIDE", PF_PAD_NIGHTTIDE},
     {"AURORA", PF_PAD_AURORA},
-    {"SEQ DUST", PF_PAD_SEQDUST},
+    {"MIST FLOW", PF_PAD_MISTFLOW},
 };
 #define NPAD_LAB (sizeof FACT_PAD_LAB / sizeof FACT_PAD_LAB[0])
 
