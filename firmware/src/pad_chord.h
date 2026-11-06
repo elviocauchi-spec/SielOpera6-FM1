@@ -17,6 +17,9 @@ typedef struct {
 } pad_chord_t;
 
 static pad_chord_t pad_chord;
+/* Publish root/third/valid together in one aligned 32-bit store.
+ * The real-time audio ISR must never see a half-updated chord. */
+static volatile uint32_t pad_chord_harmony;   /* bit8 valid; low nibble root; bits4-6 third */
 static volatile uint32_t pad_follow_enabled = 1u;
 static volatile int32_t pad_follow_octave = 1;    /* reference C4 -> played root in octave 4 */
 
@@ -51,6 +54,7 @@ static void pad_chord_event(uint32_t on, uint32_t note)
         pad_chord.root = (uint8_t)root;
         pad_chord.third = (uint8_t)third;
         pad_chord.valid = 1u;
+        pad_chord_harmony = 0x100u | (uint32_t)root | ((uint32_t)third << 4);
         pad_chord.revision++;
     }
 }
@@ -61,10 +65,12 @@ static void pad_chord_event(uint32_t on, uint32_t note)
  * This is CHORD FOLLOW, not an automatic melody composer. */
 static uint32_t pad_chord_pitch(int32_t note)
 {
+    uint32_t harmony = pad_chord_harmony; /* one stable snapshot per sequenced note */
+    int32_t root = (int32_t)(harmony & 15u), third = (int32_t)((harmony >> 4) & 7u);
     int32_t rel = note - 60, oct = rel >= 0 ? rel / 12 : -((-rel + 11) / 12);
     int32_t degree = rel - 12 * oct;
-    int32_t interval = degree <= 2 ? 0 : degree <= 5 ? pad_chord.third : degree <= 9 ? 7 : 12;
-    int32_t out = 48 + (int32_t)pad_chord.root + 12 * (oct + pad_follow_octave) + interval;
+    int32_t interval = degree <= 2 ? 0 : degree <= 5 ? third : degree <= 9 ? 7 : 12;
+    int32_t out = 48 + root + 12 * (oct + pad_follow_octave) + interval;
     if (out < 1) out = 1;
     if (out > 127) out = 127;
     return (uint32_t)out;
