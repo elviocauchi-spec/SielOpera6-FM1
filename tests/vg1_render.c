@@ -179,6 +179,11 @@ static int render_gated_diagnostics(const char *base) {
     p=V1_FACTORY[3]; p.vg_amp.drive=0;
     p.vg_delay.on=0; p.vg_reverb.on=0;
     RENDER_VARIANT("08_GATE_WITHOUT_DRIVE");
+    /* Brighter prior oscillator/filter tuning, but SAME newly-smoothed
+       Trancegate kernel. Direct A/B isolates the voicing improvement. */
+    p=V1_FACTORY[3]; p.osc[1].level=62;p.vg_amp.drive=4;
+    p.cutoff=68;p.resonance=23;
+    RENDER_VARIANT("09_PREVIOUS_BRIGHT_TONE");
 #undef RENDER_VARIANT
     return 0;
 }
