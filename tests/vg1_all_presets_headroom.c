@@ -36,9 +36,9 @@ int main(void) {
             for(uint32_t j=0;j<n;j++)
                 v1_hold(&e,1,(uint8_t)(note+offsets[j]),100);
             uint32_t peak=render(V1_SR);
-            printf("HEADROOM %-14s notes=%u peak=%u raw_osc=%u predrive=%u driveclip=%u dry65k=%u busclip=%u panclip=%u delayclip=%u predelay=%u reverbclip=%u finalclip=%u\n",
-                   V1_FACTORY[preset].name,n,peak,e.diag_osc_over,
-                   e.diag_pre_drive_over,e.diag_drive_over,
+            printf("HEADROOM %-14s notes=%u peak=%u raw_osc=%u stack_clip=%u predrive=%u drivehot=%u driveplateau=%u dry65k=%u busclip=%u panclip=%u delayclip=%u predelay=%u reverbclip=%u finalclip=%u\n",
+                   V1_FACTORY[preset].name,n,peak,e.diag_osc_raw_over,e.diag_osc_over,
+                   e.diag_pre_drive_over,e.diag_drive_over,e.diag_drive_plateau,
                    e.diag_poly_mix_over,e.diag_post_gain_clamp,
                    e.diag_pan_over,e.diag_delay_over,e.diag_predelay_over,
                    e.diag_reverb_over,e.diag_final_over);
