@@ -71,6 +71,26 @@ int main(void) {
         for(uint32_t i=0;i<V1_VOICES;i++)
             CHECK(!engine.voices[i].active,"polyphonic voice must fully release");
     }
-    puts("PASS: Gated Motion 1..8 voices, no post-gain/FX/DAC clipping; all notes release");
+    /* Real playing differs from simultaneous note-on: adding a key to a
+       sustained chord changes bus gain mid-note. The gain smoothing must
+       prevent a transient overload, not just steady-state clipping. */
+    v1_engine_init(&engine,p);
+    for(uint32_t n=0;n<8;n++) {
+        v1_hold(&engine,1,notes[n],100);
+        uint32_t peak=render_frames(V1_SR/4);
+        printf("GATED MOTION progressive chord %u: peak=%u, bus_gain_q15=%d, clamp=%u, final_clip=%u\n",
+               n+1,peak,engine.poly_gain_q15,
+               engine.diag_post_gain_clamp,engine.diag_final_over);
+        CHECK(peak<32000,"adding sustained notes must leave DAC headroom");
+        CHECK(engine.diag_post_gain_clamp==0 && engine.diag_final_over==0,
+              "progressive notes must not overload the output");
+    }
+    for(uint32_t n=0;n<8;n++)v1_hold(&engine,0,notes[n],0);
+    CHECK(engine.held_count==0,"releasing the progressive chord clears held keys");
+    render_frames(3*V1_SR);
+    for(uint32_t i=0;i<V1_VOICES;i++)
+        CHECK(!engine.voices[i].active,"progressive chord should release every note");
+    puts("PASS: Gated Motion 1..8 simultaneous and progressive voices; no mixer/FX/DAC saturation");
+
     return 0;
 }
