@@ -56,6 +56,7 @@ typedef struct {
     vg1_reverb_patch_t vg_reverb;
     vg1_arpeggiator_patch_t vg_arp;
     vg1_glide_patch_t vg_glide;
+    uint8_t bend_range,vib_speed,vib_depth;
 } v1_patch_t;
 
 typedef struct { uint32_t ph[V1_SUPER], inc[V1_SUPER], base_inc[V1_SUPER]; uint32_t rng; int32_t noise_prev; } v1_osc_state_t;
@@ -74,8 +75,10 @@ typedef struct {
     v1_patch_t patch;
     v1_voice_t voices[V1_VOICES];
     uint32_t note_age, rng;
-    uint32_t lfo_ph[3], frames;
+    uint32_t lfo_ph[3], frames, vibrato_ph;
     int32_t lfo[3];
+    volatile int32_t bend14;
+    volatile uint8_t aftertouch;
     uint16_t gate_step;
     uint32_t gate_phase;
     int32_t gate_smooth,gate_smooth_right;
@@ -366,6 +369,7 @@ static void v1_hold(v1_engine_t *e,uint8_t on,uint8_t note,uint8_t vel) {
     if(on) {
         for(i=0;i<e->held_count;i++) if(e->held[i]==note) return;
         if(e->held_count<16) {e->held[e->held_count]=note;e->held_velocity[e->held_count++]=vel;}
+        if(e->patch.vg_arp.on&&e->patch.vg_arp.retrig){e->arp_phase=0;e->arp_pos=0;}
         if(v1_arp_mode(&e->patch)==V1_ARP_OFF)v1_note_on(e,note,vel);
     } else {
         for(i=0;i<e->held_count;i++) if(e->held[i]==note) {
@@ -446,6 +450,10 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             e->lfo_ph[j]+=inc;
             e->lfo[j]=v1_tri_lfo(e->lfo_ph[j]);
         }
+        e->vibrato_ph+=(uint32_t)(p->vib_speed+1u)*45000u;
+        int32_t bendc=(e->bend14*(int32_t)p->bend_range*100)/8192;
+        int32_t vibc=(int32_t)(((int64_t)e->aftertouch*(int32_t)p->vib_depth*100
+             *v1_sine_sample(e->vibrato_ph))/(127*127*32767));
         for(i=0;i<V1_VOICES;i++) {
             v1_voice_t *v=&e->voices[i];
             int32_t s=0,fe,amp,cut;
@@ -458,7 +466,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
                 for(oi=0;oi<3;oi++) {
                     int32_t cents=((int32_t)p->vg_lfo[oi].detune*e->lfo[oi])>>15;
                     cents+=(((int32_t)p->vg_env1.detune*v->a.level)>>15);
-                    cents+=env_pitch*100;
+                    cents+=env_pitch*100+bendc+vibc;
                     if(!oi)cents+=((int32_t)p->lfo_pitch*e->lfo[0])>>16;
                     for(si=0;si<V1_SUPER;si++)
                         v->osc[oi].inc[si]=v1_detune_inc(v->osc[oi].base_inc[si],cents);
