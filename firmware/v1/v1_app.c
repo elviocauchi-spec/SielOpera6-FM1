@@ -95,32 +95,63 @@ static v1_engine_t v1 __attribute__((section(".pool")));
 static volatile uint32_t req_program;
 static uint32_t got_program, page, octave, bpm=128, panel_last, keys_last;
 static volatile uint32_t v1_dsp_pct; /* time in our DSP relative to the 256-frame audio deadline */
-enum { UI_PLAY,UI_OSC1,UI_OSC2,UI_OSC3,UI_FILTER,UI_AMP,UI_FENV,UI_MOD,
-       UI_FX,UI_GATE,UI_GATE_STEPS,UI_ARP,UI_MASTER,UI_PAGES };
+/* User-facing pages follow the original Vanguard 1.6 section names.
+ * The small FM1 screen navigates the same controls with four encoders.
+ * The oscillator/filter menus display their documented entries verbatim. */
+enum { UI_PLAY,
+       UI_OSC1,UI_OSC2,UI_OSC3,UI_OSC_FAT,
+       UI_LFO1,UI_LFO2,UI_LFO3,
+       UI_FILTER,UI_FILTER_TRACK,
+       UI_ENV1,UI_ENV1_MOD,UI_ENV2,UI_ENV2_MOD,
+       UI_AMP,UI_AMP_STEREO,
+       UI_GATE,UI_GATE_STEPS_L,UI_GATE_STEPS_R,UI_GATE_RATE,
+       UI_DELAY,UI_DELAY_MORE,
+       UI_REVERB,UI_REVERB_MORE,
+       UI_ARP,UI_ARP_MORE,
+       UI_GLIDE,UI_PITCH,UI_VOICES,
+       UI_PAGES };
 static const char *const UI_TITLES[UI_PAGES] = {
-    "PERFORM","OSCILLATOR 1","OSCILLATOR 2","OSCILLATOR 3","FILTER",
-    "AMP ENVELOPE","FILTER ENVELOPE","MODULATION","EFFECTS",
-    "TRANCEGATE","16-STEP GATE","ARPEGGIATOR","MASTER"
+    "VANGUARD 1","OSCILLATOR 1","OSCILLATOR 2","OSCILLATOR 3","OSC FAT/VCS",
+    "LFO 1","LFO 2","LFO 3","FILTER","FILTER TRACK",
+    "ENVELOPE 1","ENV 1 ROUTING","ENVELOPE 2","ENV 2 ROUTING",
+    "AMPLIFIER","AMP STEREO",
+    "TRANCEGATE","TRANCEGATE L","TRANCEGATE R","GATE TIMING",
+    "DELAY","DELAY MODES","REVERB","REVERB SPACE",
+    "ARPEGGIATOR","ARP OPTIONS","GLIDE","PITCH","VOICES"
 };
 static const char *const UI_LABELS[UI_PAGES][4] = {
-    {"CUTOFF","RESO","CHORUS","GATE"},
-    {"WAVE","LEVEL","DETUNE","WIDTH"},
-    {"WAVE","LEVEL","SEMI","WIDTH"},
-    {"WAVE","LEVEL","SEMI","FINE"},
-    {"CUTOFF","RESO","TYPE","ENV AMT"},
+    {"CUTOFF","RESO","FAT","BPM"},
+    {"WAVE","LEVEL","SEMI","PWM"},
+    {"WAVE","LEVEL","SEMI","PWM"},
+    {"WAVE","LEVEL","SEMI","PWM"},
+    {"RETRIG","FAT","VCS","AGE"},
+    {"SPEED","DETUNE","PWM","CUTOFF"},
+    {"SPEED","DETUNE","PWM","CUTOFF"},
+    {"SPEED","DETUNE","PWM","CUTOFF"},
+    {"TYPE","CUTOFF","RESO","KEYTRK"},
+    {"KEYTRK","VELTRK","--","--"},
     {"ATTACK","DECAY","SUSTAIN","RELEASE"},
+    {"LEVEL","PWM","CUTOFF","DETUNE"},
     {"ATTACK","DECAY","SUSTAIN","RELEASE"},
-    {"LFO RATE","PITCH","FILTER","AMP"},
-    {"CHORUS","DELAY","REVERB","DRIVE"},
-    {"ON/OFF","RATE","DEPTH","BPM"},
-    {"STEPS 1-4","STEPS 5-8","STEPS 9-12","STEPS 13-16"},
-    {"MODE","RATE","GATE","OCTAVES"},
-    {"LEVEL","FEEDBACK","LFO 2","VOICES"}
+    {"RESO","PWM","CUTOFF","PITCH"},
+    {"DRIVE","LEVEL","VELTRK","PAN"},
+    {"SPREAD","--","--","--"},
+    {"ON/OFF","STEREO","MIX","CONTOUR"},
+    {"STEP","ON/OFF","ROTATE","ALL/CLR"},
+    {"STEP","ON/OFF","ROTATE","ALL/CLR"},
+    {"SPEED","TRIP/DOT","SYNC POS","BPM"},
+    {"ON/OFF","TYPE","MIX","SPEED"},
+    {"FEEDBACK","DAMP","TRIP/DOT","WIDEN MS"},
+    {"ON/OFF","MIX","PRE-DLY","ROOMSIZE"},
+    {"DAMP","WIDTH","--","--"},
+    {"ON/OFF","MODE","SPEED","GATE"},
+    {"OCTAVES","RETRIG","TRIP/DOT","--"},
+    {"ON/OFF","SPEED","TRIP/DOT","--"},
+    {"PB RANGE","VIB SPEED","VIB DEPTH","--"},
+    {"VOICES","MASTER","--","--"}
 };
-static const char *const WAVE_NAMES[]={"OFF","SAW","PULSE","TRI","SINE","SUPERSAW","NOISE"};
-static const char *const FILTER_NAMES[]={"LP12","HP12","BP12","NOTCH","LP24","HP24","BP24"};
-static const char *const ARP_NAMES[]={"OFF","UP","DOWN","UP-DOWN","RANDOM","PLAYED"};
 static const char *const RATE_NAMES[]={"1/8","1/16","1/32"};
+static uint32_t vg1_gate_cursor;
 static const char *const STEP_HEX[]={"0","1","2","3","4","5","6","7","8","9","A","B","C","D","E","F"};
 
 typedef struct { uint8_t on,note,vel; } v1_note_msg_t;
@@ -143,7 +174,7 @@ static void app_audio(int32_t *out,uint32_t n) {
         v1_panic(&v1);
         v1.patch=V1_FACTORY[got_program];
         v1.gate_phase=v1.gate_step=v1.arp_phase=v1.arp_pos=0;
-        v1.gate_smooth=32767;
+        v1.gate_smooth=v1.gate_smooth_right=32767;
     }
     while(qr!=qw) {
         v1_note_msg_t m=msgs[qr&(V1_Q-1u)];
@@ -163,77 +194,195 @@ static uint32_t v1_bound(int32_t v,int32_t max) {
     if(v>max)return (uint32_t)max;
     return (uint32_t)v;
 }
+static void vg1_adj_u8(uint8_t *p,int32_t delta,int32_t lo,int32_t hi)
+{ *p=(uint8_t)v1_clip((int32_t)*p+delta,lo,hi); }
+static void vg1_adj_i8(int8_t *p,int32_t delta,int32_t lo,int32_t hi)
+{ *p=(int8_t)v1_clip((int32_t)*p+delta,lo,hi); }
+static void vg1_adj_rate(vg1_rate_t *r,uint32_t k,int32_t d) {
+    if(k==0) {
+        uint32_t den=r->denominator?r->denominator:16u,ix=0;
+        while(den>1u&&ix<6u){den>>=1u;ix++;}
+        ix=(uint32_t)v1_clip((int32_t)ix+d,0,6);
+        r->denominator=(uint8_t)(1u<<ix);
+    } else vg1_adj_u8(&r->variant,d,0,2);
+}
+static int32_t vg1_get_signed(uint32_t pg,uint32_t k) {
+    const v1_patch_t *p=&v1.patch;
+    if(pg==UI_OSC1||pg==UI_OSC2||pg==UI_OSC3)
+        return k==2 ? p->osc[pg-UI_OSC1].semi : 0;
+    if(pg==UI_LFO1||pg==UI_LFO2||pg==UI_LFO3){
+        const vg1_lfo_patch_t *l=&p->vg_lfo[pg-UI_LFO1];
+        return k==1?l->detune:k==2?l->pwm:k==3?l->cutoff:0;
+    }
+    if(pg==UI_FILTER||pg==UI_FILTER_TRACK)
+        return k==3||k==0 ? p->vg_keytrack.keytrk : k==1?p->vg_keytrack.veltrk:0;
+    if(pg==UI_ENV1_MOD){
+        return k==0?p->vg_env1.level:k==1?p->vg_env1.pwm:k==2?p->vg_env1.cutoff:p->vg_env1.detune;
+    }
+    if(pg==UI_ENV2_MOD){
+        return k==0?p->vg_env2.resonance:k==1?p->vg_env2.pwm:k==2?p->vg_env2.cutoff:p->vg_env2.pitch;
+    }
+    if(pg==UI_AMP&&k==2)return p->vg_amp.veltrk;
+    return 0;
+}
+static uint32_t vg1_is_signed(uint32_t pg,uint32_t k) {
+    return ((pg>=UI_OSC1&&pg<=UI_OSC3&&k==2)||
+           (pg>=UI_LFO1&&pg<=UI_LFO3&&k>0)||
+           (pg==UI_FILTER&&k==3)||
+           (pg==UI_FILTER_TRACK&&k<2)||
+           (pg==UI_ENV1_MOD)||(pg==UI_ENV2_MOD)||
+           (pg==UI_AMP&&k==2));
+}
 static void v1_param_change(uint32_t pg,uint32_t k,int32_t n) {
     v1_patch_t *p=&v1.patch;
     v1_osc_patch_t *o;
+    vg1_lfo_patch_t *l;
     v1_adsr_patch_t *a;
-    uint8_t *field=0;
-    int32_t max=127,now=0,next;
-    if(pg==UI_OSC1||pg==UI_OSC2||pg==UI_OSC3) {
+    uint16_t *mask;
+    if(pg>=UI_OSC1&&pg<=UI_OSC3){
         o=&p->osc[pg-UI_OSC1];
-        if(k==0){field=&o->wave;max=V1_NOISE;}
-        else if(k==1)field=&o->level;
-        else if(k==2 && pg==UI_OSC1)field=&o->detune;
-        else if(k==2){int32_t s=(int32_t)o->semi+n; o->semi=(int8_t)v1_clip(s,-24,24);return;}
-        else if(k==3 && pg==UI_OSC3){o->fine=(int8_t)v1_clip((int32_t)o->fine+n,-50,50);return;}
-        else field=&o->pw;
-    } else if(pg==UI_AMP||pg==UI_FENV) {
-        a=pg==UI_AMP?&p->amp:&p->filter_env;
-        field=k==0?&a->attack:k==1?&a->decay:k==2?&a->sustain:&a->release;
+        if(k==0)vg1_adj_u8(&o->wave,n,0,VG1_N_WAVES-1);
+        if(k==1)vg1_adj_u8(&o->level,n,0,127);
+        if(k==2)vg1_adj_i8(&o->semi,n,-36,36);
+        if(k==3)vg1_adj_u8(&o->pw,n,0,127);
+    } else if(pg==UI_OSC_FAT) {
+        if(k==0)vg1_adj_u8(&p->vg_osc.retrig,n,0,1);
+        if(k==1)vg1_adj_u8(&p->vg_osc.fat,n,0,127);
+        if(k==2)vg1_adj_u8(&p->vg_osc.vcs,n,2,10);
+        if(k==3)vg1_adj_u8(&p->vg_osc.age,n,0,127);
+    } else if(pg>=UI_LFO1&&pg<=UI_LFO3) {
+        l=&p->vg_lfo[pg-UI_LFO1];
+        if(k==0)vg1_adj_u8(&l->speed,n,0,60);
+        if(k==1)vg1_adj_i8(&l->detune,n,-127,127);
+        if(k==2)vg1_adj_i8(&l->pwm,n,-127,127);
+        if(k==3)vg1_adj_i8(&l->cutoff,n,-127,127);
     } else if(pg==UI_FILTER) {
-        if(k==0)field=&p->cutoff;
-        if(k==1)field=&p->resonance;
-        if(k==2){field=&p->filter_type;max=V1_BP24;}
-        if(k==3){p->filter_env_depth=(int8_t)v1_clip((int32_t)p->filter_env_depth+n,-64,64);return;}
-    } else if(pg==UI_MOD) {
-        field=k==0?&p->lfo_rate[0]:k==1?&p->lfo_pitch:k==2?&p->lfo_filter:&p->lfo_amp;
-    } else if(pg==UI_FX) {
-        field=k==0?&p->chorus:k==1?&p->delay:k==2?&p->reverb:&p->drive;
+        if(k==0)vg1_adj_u8(&p->filter_type,n,0,VG1_N_FILTERS-1);
+        if(k==1)vg1_adj_u8(&p->cutoff,n,0,127);
+        if(k==2)vg1_adj_u8(&p->resonance,n,0,127);
+        if(k==3)vg1_adj_i8(&p->vg_keytrack.keytrk,n,-127,127);
+    } else if(pg==UI_FILTER_TRACK){
+        if(k==0)vg1_adj_i8(&p->vg_keytrack.keytrk,n,-127,127);
+        if(k==1)vg1_adj_i8(&p->vg_keytrack.veltrk,n,-127,127);
+    } else if(pg==UI_ENV1||pg==UI_ENV2) {
+        a=pg==UI_ENV1?&p->amp:&p->filter_env;
+        uint8_t *v=k==0?&a->attack:k==1?&a->decay:k==2?&a->sustain:&a->release;
+        vg1_adj_u8(v,n,0,127);
+    } else if(pg==UI_ENV1_MOD) {
+        int8_t *v=k==0?&p->vg_env1.level:k==1?&p->vg_env1.pwm:k==2?&p->vg_env1.cutoff:&p->vg_env1.detune;
+        vg1_adj_i8(v,n,k==3?-100:-127,k==3?100:127);
+    } else if(pg==UI_ENV2_MOD) {
+        int8_t *v=k==0?&p->vg_env2.resonance:k==1?&p->vg_env2.pwm:k==2?&p->vg_env2.cutoff:&p->vg_env2.pitch;
+        vg1_adj_i8(v,n,k==3?-48:-127,k==3?48:127);
+    } else if(pg==UI_AMP){
+        if(k==0)vg1_adj_u8(&p->vg_amp.drive,n,0,127);
+        if(k==1)vg1_adj_u8(&p->vg_amp.level,n,0,127);
+        if(k==2)vg1_adj_i8(&p->vg_amp.veltrk,n,-127,127);
+        if(k==3)vg1_adj_u8(&p->vg_amp.pan,n,0,127);
+    } else if(pg==UI_AMP_STEREO){
+        if(k==0)vg1_adj_u8(&p->vg_amp.spread,n,0,127);
     } else if(pg==UI_GATE) {
-        if(k==0){field=&p->trance_enabled;max=1;}
-        if(k==1){field=&p->trance_rate;max=2;}
-        if(k==2)field=&p->trance_depth;
-        if(k==3){bpm=v1_bound((int32_t)bpm+n,V1_BPM_MAX);if(bpm<V1_BPM_MIN)bpm=V1_BPM_MIN;return;}
-    } else if(pg==UI_GATE_STEPS) {
-        uint32_t shift=k*4u;
-        int32_t x=(p->trance_mask>>shift)&15u;
-        x=v1_clip(x+n,0,15);
-        p->trance_mask=(uint16_t)((p->trance_mask&~(15u<<shift))|((uint32_t)x<<shift));
-        return;
+        if(k==0)vg1_adj_u8(&p->vg_gate.enabled,n,0,1);
+        if(k==1)vg1_adj_u8(&p->vg_gate.stereo,n,0,1);
+        if(k==2)vg1_adj_u8(&p->vg_gate.mix,n,0,127);
+        if(k==3)vg1_adj_u8(&p->vg_gate.contour,n,0,127);
+    } else if(pg==UI_GATE_STEPS_L||pg==UI_GATE_STEPS_R) {
+        mask=pg==UI_GATE_STEPS_L?&p->vg_gate.left:&p->vg_gate.right;
+        if(k==0)vg1_gate_cursor=(uint32_t)v1_clip((int32_t)vg1_gate_cursor+n,0,15);
+        if(k==1&&n)*mask^=(uint16_t)(1u<<vg1_gate_cursor);
+        if(k==2&&n)*mask=(uint16_t)(n>0?(*mask<<1)|(*mask>>15):(*mask>>1)|(*mask<<15));
+        if(k==3&&n)*mask=n>0?0xffffu:0;
+    } else if(pg==UI_GATE_RATE) {
+        if(k==0)vg1_adj_rate(&p->vg_gate.speed,0,n);
+        if(k==1)vg1_adj_rate(&p->vg_gate.speed,1,n);
+        if(k==2)vg1_adj_u8(&p->vg_gate.sync_to_song_position,n,0,1);
+        if(k==3) {bpm=(uint32_t)v1_clip((int32_t)bpm+n,V1_BPM_MIN,V1_BPM_MAX);}
+    } else if(pg==UI_DELAY){
+        if(k==0)vg1_adj_u8(&p->vg_delay.on,n,0,1);
+        if(k==1)vg1_adj_u8(&p->vg_delay.type,n,0,3);
+        if(k==2)vg1_adj_u8(&p->vg_delay.mix,n,0,127);
+        if(k==3)vg1_adj_rate(&p->vg_delay.speed,0,n);
+    } else if(pg==UI_DELAY_MORE) {
+        if(k==0)vg1_adj_u8(&p->vg_delay.feedback,n,0,120);
+        if(k==1)vg1_adj_u8(&p->vg_delay.damp,n,0,127);
+        if(k==2)vg1_adj_rate(&p->vg_delay.speed,1,n);
+        if(k==3)vg1_adj_u8(&p->vg_delay.widen_ms,n,1,127);
+    } else if(pg==UI_REVERB){
+        if(k==0)vg1_adj_u8(&p->vg_reverb.on,n,0,1);
+        if(k==1)vg1_adj_u8(&p->vg_reverb.mix,n,0,127);
+        if(k==2)vg1_adj_u8(&p->vg_reverb.predelay,n,0,127);
+        if(k==3)vg1_adj_u8(&p->vg_reverb.room_size,n,0,127);
+    } else if(pg==UI_REVERB_MORE){
+        if(k==0)vg1_adj_u8(&p->vg_reverb.damp,n,0,127);
+        if(k==1)vg1_adj_u8(&p->vg_reverb.width,n,0,127);
     } else if(pg==UI_ARP) {
-        if(k==0){field=&p->arp_mode;max=V1_ARP_PLAYED;}
-        if(k==1){field=&p->arp_rate;max=2;}
-        if(k==2)field=&p->arp_gate;
-        if(k==3){field=&p->arp_octaves;max=4;}
-    } else if(pg==UI_MASTER) {
-        if(k==3) {
-            int32_t voices=p->voice_limit?p->voice_limit:8;
-            p->voice_limit=(uint8_t)v1_clip(voices+n*4,4,V1_VOICES);
-            return;
+        if(k==0)vg1_adj_u8(&p->vg_arp.on,n,0,1);
+        if(k==1)vg1_adj_u8(&p->vg_arp.mode,n,0,4);
+        if(k==2)vg1_adj_rate(&p->vg_arp.speed,0,n);
+        if(k==3)vg1_adj_u8(&p->vg_arp.gate,n,0,127);
+    } else if(pg==UI_ARP_MORE) {
+        if(k==0)vg1_adj_u8(&p->vg_arp.octaves,n,1,4);
+        if(k==1)vg1_adj_u8(&p->vg_arp.retrig,n,0,1);
+        if(k==2)vg1_adj_rate(&p->vg_arp.speed,1,n);
+    } else if(pg==UI_GLIDE){
+        if(k==0)vg1_adj_u8(&p->vg_glide.on,n,0,1);
+        if(k==1)vg1_adj_rate(&p->vg_glide.speed,0,n);
+        if(k==2)vg1_adj_rate(&p->vg_glide.speed,1,n);
+    } else if(pg==UI_PITCH) {
+        /* Vanguard's pitchbend/aftertouch parameters are separate from LFO1 */
+        if(k==0)vg1_adj_u8(&p->bend_range,n,0,24);
+        if(k==1)vg1_adj_u8(&p->vib_speed,n,0,127);
+        if(k==2)vg1_adj_u8(&p->vib_depth,n,0,127);
+    } else if(pg==UI_VOICES){
+        if(k==0) {
+            uint32_t old=p->voice_limit?p->voice_limit:8u;
+            p->voice_limit=(uint8_t)v1_clip((int32_t)old+n,1,V1_VOICES);
         }
-        field=k==0?&p->master:k==1?&p->delay_feedback:&p->lfo_rate[1];
-    } else {
-        field=k==0?&p->cutoff:k==1?&p->resonance:k==2?&p->chorus:&p->trance_depth;
+        if(k==1)vg1_adj_u8(&p->master,n,0,127);
+    } else if(pg==UI_PLAY) {
+        if(k==0)vg1_adj_u8(&p->cutoff,n,0,127);
+        if(k==1)vg1_adj_u8(&p->resonance,n,0,127);
+        if(k==2)vg1_adj_u8(&p->vg_osc.fat,n,0,127);
+        if(k==3)bpm=(uint32_t)v1_clip((int32_t)bpm+n,V1_BPM_MIN,V1_BPM_MAX);
     }
-    if(field){now=*field;next=(int32_t)v1_bound(now+n,max);*field=(uint8_t)next;}
 }
 static uint32_t v1_param_value(uint32_t pg,uint32_t k) {
     const v1_patch_t *p=&v1.patch;
-    const v1_osc_patch_t *o;
-    const v1_adsr_patch_t *a;
-    if(pg>=UI_OSC1&&pg<=UI_OSC3){
-        o=&p->osc[pg-UI_OSC1];
-        return k==0?o->wave:k==1?o->level:k==2?(pg==UI_OSC1?o->detune:(uint32_t)((int32_t)o->semi+24)):pg==UI_OSC3?(uint32_t)((int32_t)o->fine+50):o->pw;
+    if(pg>=UI_OSC1&&pg<=UI_OSC3) {
+        const v1_osc_patch_t *o=&p->osc[pg-UI_OSC1];
+        return k==0?o->wave:k==1?o->level:k==2?(uint32_t)((int32_t)o->semi+36):o->pw;
     }
-    if(pg==UI_AMP||pg==UI_FENV){a=pg==UI_AMP?&p->amp:&p->filter_env;return k==0?a->attack:k==1?a->decay:k==2?a->sustain:a->release;}
-    if(pg==UI_FILTER)return k==0?p->cutoff:k==1?p->resonance:k==2?p->filter_type:(uint32_t)((int32_t)p->filter_env_depth+64);
-    if(pg==UI_MOD)return k==0?p->lfo_rate[0]:k==1?p->lfo_pitch:k==2?p->lfo_filter:p->lfo_amp;
-    if(pg==UI_FX)return k==0?p->chorus:k==1?p->delay:k==2?p->reverb:p->drive;
-    if(pg==UI_GATE)return k==0?p->trance_enabled:k==1?p->trance_rate:k==2?p->trance_depth:bpm;
-    if(pg==UI_GATE_STEPS)return (p->trance_mask>>(k*4u))&15u;
-    if(pg==UI_ARP)return k==0?p->arp_mode:k==1?p->arp_rate:k==2?p->arp_gate:p->arp_octaves;
-    if(pg==UI_MASTER)return k==0?p->master:k==1?p->delay_feedback:k==2?p->lfo_rate[1]:(p->voice_limit?p->voice_limit:8u);
-    return k==0?p->cutoff:k==1?p->resonance:k==2?p->chorus:p->trance_depth;
+    if(pg==UI_OSC_FAT)return k==0?p->vg_osc.retrig:k==1?p->vg_osc.fat:k==2?p->vg_osc.vcs:p->vg_osc.age;
+    if(pg>=UI_LFO1&&pg<=UI_LFO3){
+        const vg1_lfo_patch_t *l=&p->vg_lfo[pg-UI_LFO1];
+        return k==0?l->speed:k==1?l->detune+127u:k==2?l->pwm+127u:l->cutoff+127u;
+    }
+    if(pg==UI_FILTER)return k==0?p->filter_type:k==1?p->cutoff:k==2?p->resonance:p->vg_keytrack.keytrk+127u;
+    if(pg==UI_FILTER_TRACK)return k==0?p->vg_keytrack.keytrk+127u:k==1?p->vg_keytrack.veltrk+127u:0;
+    if(pg==UI_ENV1||pg==UI_ENV2){
+        const v1_adsr_patch_t *a=pg==UI_ENV1?&p->amp:&p->filter_env;
+        return k==0?a->attack:k==1?a->decay:k==2?a->sustain:a->release;
+    }
+    if(pg==UI_ENV1_MOD)return (uint32_t)(k==0?p->vg_env1.level+127:k==1?p->vg_env1.pwm+127:k==2?p->vg_env1.cutoff+127:p->vg_env1.detune+100);
+    if(pg==UI_ENV2_MOD)return (uint32_t)(k==0?p->vg_env2.resonance+127:k==1?p->vg_env2.pwm+127:k==2?p->vg_env2.cutoff+127:p->vg_env2.pitch+48);
+    if(pg==UI_AMP)return k==0?p->vg_amp.drive:k==1?p->vg_amp.level:k==2?p->vg_amp.veltrk+127u:p->vg_amp.pan;
+    if(pg==UI_AMP_STEREO)return k==0?p->vg_amp.spread:0;
+    if(pg==UI_GATE)return k==0?p->vg_gate.enabled:k==1?p->vg_gate.stereo:k==2?p->vg_gate.mix:p->vg_gate.contour;
+    if(pg==UI_GATE_STEPS_L||pg==UI_GATE_STEPS_R){
+        uint16_t m=pg==UI_GATE_STEPS_L?p->vg_gate.left:p->vg_gate.right;
+        return k==0?vg1_gate_cursor+1u:k==1?(m>>vg1_gate_cursor)&1u:k==2?0u:k==3?0u;
+    }
+    if(pg==UI_GATE_RATE)return k==0?p->vg_gate.speed.denominator:k==1?p->vg_gate.speed.variant:k==2?p->vg_gate.sync_to_song_position:bpm;
+    if(pg==UI_DELAY)return k==0?p->vg_delay.on:k==1?p->vg_delay.type:k==2?p->vg_delay.mix:p->vg_delay.speed.denominator;
+    if(pg==UI_DELAY_MORE)return k==0?p->vg_delay.feedback:k==1?p->vg_delay.damp:k==2?p->vg_delay.speed.variant:p->vg_delay.widen_ms;
+    if(pg==UI_REVERB)return k==0?p->vg_reverb.on:k==1?p->vg_reverb.mix:k==2?p->vg_reverb.predelay:p->vg_reverb.room_size;
+    if(pg==UI_REVERB_MORE)return k==0?p->vg_reverb.damp:k==1?p->vg_reverb.width:0;
+    if(pg==UI_ARP)return k==0?p->vg_arp.on:k==1?p->vg_arp.mode:k==2?p->vg_arp.speed.denominator:p->vg_arp.gate;
+    if(pg==UI_ARP_MORE)return k==0?p->vg_arp.octaves:k==1?p->vg_arp.retrig:k==2?p->vg_arp.speed.variant:0;
+    if(pg==UI_GLIDE)return k==0?p->vg_glide.on:k==1?p->vg_glide.speed.denominator:k==2?p->vg_glide.speed.variant:0;
+    if(pg==UI_PITCH)return k==0?p->bend_range:k==1?p->vib_speed:k==2?p->vib_depth:0;
+    if(pg==UI_VOICES)return k==0?(p->voice_limit?p->voice_limit:8u):k==1?p->master:0;
+    return k==0?p->cutoff:k==1?p->resonance:k==2?p->vg_osc.fat:bpm;
 }
 static void v1_num(char *p,uint32_t v) {
     char t[12];uint32_t i=0,j=0;
@@ -248,7 +397,7 @@ static void v1_panel_draw(void) {
     const v1_patch_t *p=&v1.patch;
     uint16_t bg=RGB(8,10,22), rule=RGB(58,73,105), high=RGB(67,216,223), warm=RGB(244,193,105);
     cv_begin(240,112,bg);
-    cv_text(9,4,&FONT_S,"V-1  /  FM1",high);
+    cv_text(9,4,&FONT_S,"VG-1  /  FM1",high);
     cv_text(9,24,&FONT_S,p->name,RGB(236,235,242));
     cv_rect(8,44,224,1,rule);
     cv_text(9,50,&FONT_S,UI_TITLES[pg],warm);
@@ -257,11 +406,15 @@ static void v1_panel_draw(void) {
     for(k=0;k<4;k++) {
         uint32_t x=7u+k*59u,val=v1_param_value(pg,k);
         const char *value=0;
-        if((pg>=UI_OSC1 && pg<=UI_OSC3)&&k==0)value=WAVE_NAMES[val%(V1_NOISE+1u)];
-        else if(pg==UI_FILTER&&k==2)value=FILTER_NAMES[val%(V1_BP24+1u)];
-        else if(pg==UI_ARP&&k==0)value=ARP_NAMES[val%(V1_ARP_PLAYED+1u)];
-        else if((pg==UI_GATE&&k==1)||(pg==UI_ARP&&k==1))value=RATE_NAMES[val%3u];
-        else if(pg==UI_GATE_STEPS)value=STEP_HEX[val&15u];
+        if((pg>=UI_OSC1 && pg<=UI_OSC3)&&k==0) {
+            v1_num(tmp,val);value=tmp; /* full wave name shown above controls */
+        }
+        else if(pg==UI_FILTER&&k==0) {
+            v1_num(tmp,val);value=tmp; /* mode number, full label in status area */
+        }
+        else if(pg==UI_ARP&&k==1)value=vg1_arp_name[val%VG1_ARP_N_MODES];
+        else if(pg==UI_DELAY&&k==1)value=vg1_delay_name[val%VG1_N_DELAY_MODES];
+        else if(pg==UI_GATE_STEPS_L||pg==UI_GATE_STEPS_R){v1_num(tmp,val);value=tmp;}
         else {v1_num(tmp,val);value=tmp;}
         cv_text((int32_t)x,73,&FONT_S,UI_LABELS[pg][k],RGB(125,145,169));
         cv_text((int32_t)x,91,&FONT_S,value,RGB(235,235,239));
@@ -269,9 +422,14 @@ static void v1_panel_draw(void) {
     cv_blit(0,0);
     cv_begin(240,112,bg);
     cv_rect(8,3,224,1,rule);
-    cv_text(10,13,&FONT_S,"ORIGINAL 3 OSC ENGINE",high);
-    cv_text(10,37,&FONT_S,p->arp_mode?"ARP ACTIVE":"ARP OFF",RGB(161,180,205));
-    cv_text(10,61,&FONT_S,p->trance_enabled?"TRANCEGATE ON":"TRANCEGATE OFF",RGB(161,180,205));
+    if(pg>=UI_OSC1&&pg<=UI_OSC3)
+        cv_text(8,13,&FONT_S,vg1_wave_name[p->osc[pg-UI_OSC1].wave%VG1_N_WAVES],high);
+    else if(pg==UI_FILTER)
+        cv_text(8,13,&FONT_S,vg1_filter_name[p->filter_type%VG1_N_FILTERS],high);
+    else
+        cv_text(10,13,&FONT_S,"VANGUARD 1 ARCHITECTURE",high);
+    cv_text(10,37,&FONT_S,v1_arp_mode(p)?"ARP ACTIVE":"ARP OFF",RGB(161,180,205));
+    cv_text(10,61,&FONT_S,p->vg_gate.enabled?"TRANCEGATE ON":"TRANCEGATE OFF",RGB(161,180,205));
     cv_text(10,85,&FONT_S,"BPM",warm);
     v1_num(bpmtext,bpm);cv_text(52,85,&FONT_S,bpmtext,RGB(230,235,246));
     cv_text(133,85,&FONT_S,"DSP",high);
@@ -314,13 +472,13 @@ static void app_main(void) {
         if(buttons&(1u<<BTN_OCT_DOWN)){if(octave)octave--;}
         if(buttons&(1u<<BTN_OCT_UP)){if(octave<4u)octave++;}
         if(buttons&(1u<<BTN_HOME))page=UI_PLAY;
-        if(buttons&(1u<<BTN_EDIT))page=page>=UI_OSC1&&page<UI_FILTER?page+1:page==UI_FILTER?UI_OSC1:UI_OSC1;
-        if(buttons&(1u<<BTN_ENV))page=page==UI_AMP?UI_FENV:UI_AMP;
-        if(buttons&(1u<<BTN_LFO))page=UI_MOD;
-        if(buttons&(1u<<BTN_FX))page=UI_FX;
-        if(buttons&(1u<<BTN_SEQ))page=page==UI_GATE?UI_GATE_STEPS:UI_GATE;
-        if(buttons&(1u<<BTN_ARP))page=UI_ARP;
-        if(buttons&(1u<<BTN_GLO))page=UI_MASTER;
+        if(buttons&(1u<<BTN_EDIT))page=page>=UI_OSC1&&page<UI_OSC_FAT?page+1:UI_OSC1;
+        if(buttons&(1u<<BTN_ENV))page=page>=UI_ENV1&&page<=UI_ENV2_MOD?UI_ENV1+(page-UI_ENV1+1u)%4u:UI_ENV1;
+        if(buttons&(1u<<BTN_LFO))page=page>=UI_LFO1&&page<=UI_LFO3?UI_LFO1+(page-UI_LFO1+1u)%3u:UI_LFO1;
+        if(buttons&(1u<<BTN_FX))page=page>=UI_GATE&&page<=UI_REVERB_MORE?UI_GATE+(page-UI_GATE+1u)%8u:UI_GATE;
+        if(buttons&(1u<<BTN_SEQ))page=page==UI_GATE_STEPS_L?UI_GATE_STEPS_R:UI_GATE_STEPS_L;
+        if(buttons&(1u<<BTN_ARP))page=page==UI_ARP?UI_ARP_MORE:UI_ARP;
+        if(buttons&(1u<<BTN_GLO))page=UI_VOICES;
         e=fm1_enc_take(ENC_SELECT);
         if(e)page=v1_bound((int32_t)page+(e>0?1:-1),UI_PAGES-1);
         e=fm1_enc_take(ENC_PRESETS);
