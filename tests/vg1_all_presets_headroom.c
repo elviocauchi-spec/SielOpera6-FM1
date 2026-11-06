@@ -27,9 +27,9 @@ static uint32_t render(uint32_t frames) {
     return peak;
 }
 int main(void) {
-    static const uint32_t chords[4]={1,3,5,8};
+    static const uint32_t chords[8]={1,2,3,4,5,6,7,8};
     for(uint32_t preset=0;preset<V1_PRESETS;preset++) {
-        for(uint32_t k=0;k<4;k++) {
+        for(uint32_t k=0;k<8;k++) {
             uint32_t n=chords[k];
             uint8_t note=(preset==1||preset==4)?43:(preset==2||preset==7)?72:60;
             v1_engine_init(&e,&V1_FACTORY[preset]);
