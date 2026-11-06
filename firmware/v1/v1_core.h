@@ -817,6 +817,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         right=(dryr*gr)>>15;
         /* Original Vanguard order: TRANCEGATE -> DELAY -> REVERB.
            Delay supports the documented mono, stereo, cross and widen modes. */
+        if(p->vg_delay.on) {
         uint32_t dl=e->delay_pos&32767u;
         int32_t oldl=e->delay_mem[0][(dl-delay_frames)&32767u];
         int32_t oldr=e->delay_mem[1][(dl-delay_frames)&32767u];
@@ -859,9 +860,19 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
                 right+=(oldr*dmix)>>5;
             }
         }
+        } else {
+            /* Disabled delay must not write a saturated copy of the dry
+               polyphonic mix into its 16-bit ring buffer. Keeping a zero
+               ring also prevents delayed sound suddenly leaking in when
+               switching presets or enabling DELAY after it was off. */
+            uint32_t dp=e->delay_pos++&32767u;
+            e->delay_mem[0][dp]=e->delay_mem[1][dp]=0;
+            e->delay_lp[0]=e->delay_lp[1]=0;
+        }
 
         /* Room model: four comb paths, stereo mix, damp, size and width.
            Input AFTER delay, as described in the Vanguard 1.6 manual. */
+        if(p->vg_reverb.on) {
         static const uint16_t taps[4]={1109,1327,1559,1801};
         int32_t room=p->vg_reverb.on?p->vg_reverb.room_size:64;
         int32_t rdamp=p->vg_reverb.on?p->vg_reverb.damp:32;
@@ -900,6 +911,18 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         wetr=(wetr*rwidth+wetm*(127-rwidth))/127;
         left+=(wetl*rmix)>>9;
         right+=(wetr*rmix)>>9;
+        } else {
+            /* No inactive reverb feedback and no phantom reverb clipping.
+               Zero each position as the ring rotates; skip all 4 comb
+               filtering and per-sample divisions while reverb is OFF. */
+            uint32_t rp=e->reverb_pos++&2047u;
+            uint32_t pre=e->reverb_prepos++&8191u;
+            e->reverb_predelay[pre]=0;
+            for(uint32_t k=0;k<4;k++) {
+                e->reverb_mem[k][rp]=0;
+                e->reverb_lp[k]=0;
+            }
+        }
         left=(left*master_gain)>>7;
         right=(right*master_gain)>>7;
 #ifdef VG1_AUDIO_DIAGNOSTICS
