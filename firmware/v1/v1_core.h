@@ -743,6 +743,18 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         if(sounding_voices>=8u && p->master>85u)
             poly_gain_target=(poly_gain_target*3)/4;
     }
+    /* Wide pads with a high REVERB MIX can build significant wet level
+       over multiple delay lengths, long AFTER the note attack. The
+       one-second held-chord audit found that a five-note Saturn Pad
+       otherwise nudged the final softguard 15 times. Budget room for
+       its additive late reverb BEFORE the FX bus, rather than clipping
+       or continuously compressing the delayed tail. */
+    if(sounding_voices>=5u && p->vg_reverb.on &&
+       p->vg_reverb.mix>64u) {
+        uint32_t penalty=((uint32_t)p->vg_reverb.mix-64u)*3u/4u;
+        if(penalty>35u)penalty=35u;
+        poly_gain_target=(poly_gain_target*(int32_t)(100u-penalty))/100;
+    }
     /* A whole new chord starts with all envelopes at zero. Apply its
        voice-count headroom BEFORE the first attack sample. Otherwise
        the 1ms gain slew starts at unity and the first 30–60 samples
