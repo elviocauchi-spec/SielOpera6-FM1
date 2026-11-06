@@ -167,10 +167,10 @@ def report(folder: Path, references: Path|None):
         print(f"Original Vanguard reference matches: {len(comparisons)}")
         if not comparisons:
             print("No matching WAV names; references must mirror the render subfolders.")
-    if duplicates or silence:
+    if duplicates or silence or clipped:
         if duplicates: print(f"Identical preset renders: {duplicates}")
-        raise RuntimeError("Audio QC failed: silent output or byte-identical factory programs")
-    print("PASS: no silent WAVs and no byte-identical factory programs.")
+        raise RuntimeError("Audio QC failed: silence, digital clipping, or byte-identical factory programs")
+    print("PASS: all WAVs audible, zero clipped samples, and factory programs are distinct.")
     print("NOTE: Tests do not claim bit-accurate reFX matching. Use --references for real A/B metrics.")
 
 
