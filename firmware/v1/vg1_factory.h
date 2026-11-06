@@ -39,7 +39,11 @@
                .speed={16,0},.retrig=1}, \
       .bend_range=2,.vib_speed=LFO,.vib_depth=12, \
       .osc={O(W0,L0,PW0,0,S0,0),O(W1,L1,PW1,0,S1,0),O(W2,L2,PW2,0,S2,0)}, \
-      .amp=ADS(A,D,S,R),.filter_env=ADS(FA,FD,FS,FR), \
+      /* The source ARP switch is exact, but our experimental envelope
+         index map can assign 300ms attacks to 60ms ARP gates. Keep ARP
+         notes audible by bounding the attack only on imported ARP
+         slots; preserve the existing original eight presets. */ \
+      .amp=ADS((ARP?((A)>12?12:(A)):(A)),D,S,R),.filter_env=ADS(FA,FD,FS,FR), \
       .cutoff=CUT,.resonance=RES,.filter_type=FTYPE,.master=MASTER,.source_bank=1 }
 static const v1_patch_t V1_FACTORY[V1_PRESETS] = {
     { .name="HEAVEN LEAD",
