@@ -22,6 +22,8 @@ static void app_idle(void);
 #include "obv_fx.h"
 #include "obv_engine.h"
 #include "pad_chord.h"
+/* Preview stays RAM-only: no flash patch/sequence format changes. */
+static uint32_t pad_demo_active, pad_demo_b_level = 86u;
 #include "obv_seq.h"
 #include "obv_patches.h"
 
@@ -261,6 +263,53 @@ static void mix_apply(void)
 }
 static uint32_t trk_silent(uint32_t t) { return ctl_mix_off >> (t % NTRK) & 1u; }
 
+/* A/B audition is deliberately isolated from saved patch and pattern state.
+ * Presets and sequences on flash remain unchanged. Turn SELECT on the BACKING
+ * page to leave/re-enter the live demo. */
+static patch_t pad_demo_saved[2];
+static void pad_demo_apply_mix(void)
+{
+    if (!pad_demo_active) return;
+    ctl_mix_off = 0xCu;      /* preview: only A and B are audible */
+    ctl_mix_lvl[0] = 100u;
+    ctl_mix_lvl[1] = (uint8_t)pad_demo_b_level;
+    ctl_mix_pan[0] = ctl_mix_pan[1] = 0;
+    ctl_mix_cho[0] = ctl_mix_dly[0] = ctl_mix_rev[0] = 127u;
+    ctl_mix_cho[1] = 30u;
+    ctl_mix_dly[1] = 35u;
+    ctl_mix_rev[1] = 70u;
+    ctl_mix_drv[1] = 0u;
+}
+static void pad_demo_enter(void)
+{
+    if (pad_demo_active) return;
+    pad_demo_saved[0] = live_p[0];
+    pad_demo_saved[1] = live_p[1];
+    patch_from_factory(&live_p[0], &FACT_PAD_LAB[0]); /* pad: CELESTIAL */
+    patch_from_factory(&live_p[1], &FACT_PAD_LAB[3]); /* backing: SEQ DUST */
+    pad_demo_b_level = 86u;
+    pad_demo_track.div = D_8;
+    pad_follow_enabled = 1u;
+    pad_follow_octave = 1;
+    pad_demo_active = 1u;
+    seq_trk = 0u;           /* the keys play the pad on A */
+    ctl_panic = 1u;
+    ctl_trk_on |= 2u;
+    ctl_seq_restart = 1u;
+    ctl_seq_run = 1u;       /* backing waits silently for a played triad */
+    pad_demo_apply_mix();
+}
+static void pad_demo_exit(void)
+{
+    if (!pad_demo_active) return;
+    ctl_seq_run = 0u;
+    ctl_panic = 1u;
+    pad_demo_active = 0u;
+    live_p[0] = pad_demo_saved[0];
+    live_p[1] = pad_demo_saved[1];
+    mix_apply();             /* restore the exact stored mixer configuration */
+}
+
 /* ---- every pattern keeps its instruments and its mix (as VIBE's 3.0): the four tracks' sounds with their edits and
  * program numbers, the mixer (level, pan, the four sends, mute, solo), the effects and MASTER. They live behind the
  * pattern's steps in its flash slot, all eight sets in RAM; a pattern without its own set takes what is playing */
@@ -346,6 +395,7 @@ static int snd_changed(uint32_t n)              /* the sounds and the mix now di
     const psnd_t *s = &psnd[n % NPAT];
     mixset_t now;
     uint32_t t;
+    if (pad_demo_active) return 0; /* audition patches must NEVER be automatically saved */
     if (s->magic != PSN2_MAGIC) return 1;
     for (t = 0; t < NTRK; t++)
         if (s->prog[t] != trk_prog[t] || s->edited[t] != trk_edited[t] || !bytes_same(&s->p[t], &live_p[t], sizeof(patch_t))) return 1;
@@ -1262,6 +1312,7 @@ static void pat_switch(uint32_t n)
 {
     static char msg[20];
     n %= NPAT;
+    if (pad_demo_active) pad_demo_exit();
     if (n != set.pat) {
         if (snd_changed(set.pat)) snd_capture(set.pat);   /* (its instruments stay with it) */
         if (pat_edited) { pat_dirty = 1; pat_next = n + 1u; return; }   /* saved when quiet, then loaded */
@@ -1279,6 +1330,7 @@ static void pat_switch(uint32_t n)
 static void pat_go(uint32_t n)
 {
     static char msg[20];
+    if (pad_demo_active) pad_demo_exit();
     n %= NPAT;
     if (pat_queue) {                            /* another one was next: take it back (the ISR never stops us halfway) */
         fm1_irq_off();
@@ -2043,6 +2095,7 @@ static void app_main(void)
     slot_lens_read();                           /* (every pattern's sounds; 1.5's patterns converted) */
     load_pattern(set.pat);
     slot_sel = set.pat;
+    pad_demo_enter();     /* boot into an immediately recognizable pad audition */
     ctl_panic = 0;
 
     ui_splash();
@@ -2224,7 +2277,7 @@ static void app_main(void)
             dirty_hdr = dirty_tags = dirty_page = 1;
         }
         if (save_armed && fm1_ms - save_t > 3000u) { save_armed = 0; dirty_page = dirty_hdr = 1; }
-        fx_sync();
+        if (!pad_demo_active) fx_sync();
         if (rec_wait) {                         /* REC waits for a track's bar: there it is */
             uint32_t w = rec_wait - 1u;
             if (rec != REC_ON || seq_trk != w) rec_wait = 0;
@@ -2232,6 +2285,7 @@ static void app_main(void)
         }
         if (req_page) { np = req_page - 1u; req_page = 0; if (np == page) dirty_page = dirty_steps = dirty_tags = 1; }
         if (np != page) {
+            if (np == PG_SEQ && pad_demo_active) pad_demo_exit();
             if (layer_lock) { layer = L_NONE; layer_lock = 0; }
             if (is_seq_page(np) != is_seq_page(page)) {   /* into / out of the full-screen sequencer: all new */
                 lcd_fill(0, 0, 240, 240, C_PANEL);
@@ -2245,7 +2299,12 @@ static void app_main(void)
         }
 
         /* encoders */
-        if ((e = fm1_enc_take(ENC_PRESETS)) != 0 && save_armed) {           /* SAVE armed: PRESETS picks the slot to save into ("save as") */
+        if (pad_demo_active && (e = fm1_enc_take(ENC_PRESETS)) != 0) {
+            pad_demo_exit();
+            trk_load(seq_trk, (uint32_t)((int32_t)trk_prog[seq_trk] + e + (int32_t)NPROG * 4) % NPROG);
+            say("DEMO OFF: NORMAL PRESETS");
+            dirty_hdr = dirty_page = dirty_tags = dirty_steps = 1;
+        } else if ((e = fm1_enc_take(ENC_PRESETS)) != 0 && save_armed) {           /* SAVE armed: PRESETS picks the slot to save into ("save as") */
             save_to = (uint32_t)((int32_t)save_to + e + (int32_t)NPROG * 4) % NPROG;
             save_t = fm1_ms;
             dirty_hdr = 1;
@@ -2254,6 +2313,7 @@ static void app_main(void)
             dirty_hdr = dirty_page = dirty_tags = dirty_steps = 1;
         }
         if ((e = fm1_enc_take(ENC_ALGORITHM)) != 0) {   /* ALGORITHM: the track A-D (as sloopDX) */
+            if (pad_demo_active) pad_demo_exit();
             trk_select((uint32_t)clampi((int32_t)seq_trk + (e > 0 ? 1 : -1), 0, NTRK - 1));
         }
         if ((e = fm1_enc_take(ENC_SELECT)) != 0) {   /* SELECT (VIBE's DATA): STEPS the bar, the sequencer's other views and
