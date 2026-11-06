@@ -106,6 +106,7 @@ typedef struct {
     uint32_t diag_frames_active,diag_gate_edges;
     uint32_t diag_poly_mix_over,diag_poly_mix_16_over;
     uint32_t diag_pan_over,diag_predelay_over;
+    uint32_t diag_post_gain_clamp;
 #endif
 } v1_engine_t;
 
@@ -714,6 +715,10 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         const int32_t poly_gain_q8=e->poly_gain_q15>>7;
         dryl=(dryl*poly_gain_q8)>>8;
         dryr=(dryr*poly_gain_q8)>>8;
+#ifdef VG1_AUDIO_DIAGNOSTICS
+        if(dryl>65535||dryl<-65535||dryr>65535||dryr<-65535)
+            e->diag_post_gain_clamp++;
+#endif
         /* Extremely dense custom patches can still exceed the intended
            voice-bus range. This guard is a final fail-safe, not a normal
            part of Gated Motion's signal path. */
