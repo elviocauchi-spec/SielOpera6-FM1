@@ -56,13 +56,14 @@ int main(void) {
     render_energy(2048);high=render_energy(2048);
     if(low*10u>high){fprintf(stderr,"gate ineffective: %llu vs %llu\n",
         (unsigned long long)low,(unsigned long long)high);return 4;}
-    p.arp_mode=V1_ARP_UP;p.arp_rate=2;p.arp_octaves=2;
+    p.arp_mode=V1_ARP_UP;p.arp_rate=2;p.arp_octaves=2;p.arp_gate=120;
     v1_engine_init(&engine,&p);
     v1_hold(&engine,1,60,100);v1_hold(&engine,1,64,100);v1_hold(&engine,1,67,100);
     if(engine.voices[0].active){fprintf(stderr,"arp started prematurely\n");return 5;}
     a=render_energy(2048);
     if(a<1000000u||!engine.arp_active){fprintf(stderr,"arp silent\n");return 6;}
     v1_hold(&engine,0,60,0);v1_hold(&engine,0,64,0);v1_hold(&engine,0,67,0);
+    v1_panic(&engine);
     if(engine.held_count||engine.arp_active){fprintf(stderr,"arp held note stuck\n");return 7;}
     printf("V-1 core smoke PASS: voice lifecycle, supersaw, 16-step gate, chord-note arp\n");
     return 0;
