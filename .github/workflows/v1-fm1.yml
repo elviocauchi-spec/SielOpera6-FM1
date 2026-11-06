@@ -15,6 +15,7 @@ on:
       - 'tests/vg1_polyphony_smoke.c'
       - 'tests/vg1_all_presets_headroom.c'
       - 'tests/vg1_cpu_bench.c'
+      - 'tests/vg1_fx_economy_smoke.c'
       - 'tools/vg1_audio_report.py'
       - 'tools/vg1_compare_audio.py'
       - 'tools/vg1_cpu_benchmark_report.py'
@@ -54,6 +55,10 @@ jobs:
           /tmp/vg1_cpu_bench_old > /tmp/vg1_old_bench.log
           /tmp/vg1_cpu_bench_fast > /tmp/vg1_fast_bench.log
           python3 tools/vg1_cpu_benchmark_report.py /tmp/vg1_old_bench.log /tmp/vg1_fast_bench.log
+      - name: Stress test emergency two-comb reverb with eight active voices
+        run: |
+          gcc -std=c11 -O2 -Wall -Wextra -o /tmp/vg1_fx_economy_smoke tests/vg1_fx_economy_smoke.c
+          /tmp/vg1_fx_economy_smoke
 
   audio-reference:
     needs: host
