@@ -113,6 +113,7 @@ static void app_audio(int32_t *out,uint32_t n) {
         v1.gate_smooth=v1.gate_smooth_right=32767;
         v1.gate_out_left=v1.gate_out_right=32767;
         v1.runtime_fat_limit=0; /* new program restores its configured FAT */
+        v1.poly_gain_q15=32767; /* no inherited chord attenuation */
     }
     while(qr!=qw) {
         v1_note_msg_t m=msgs[qr&(V1_Q-1u)];
