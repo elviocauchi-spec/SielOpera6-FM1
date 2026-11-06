@@ -110,27 +110,30 @@ static void seq_release_t(uint32_t t)
     for (i = 0; i < r->nsnd; i++) if (!seq_live(t, r->snd[i])) voice_release(t, r->snd[i], 1);
     r->nsnd = 0;
 }
-static uint32_t seq_note(const step_t *s, uint32_t i, int32_t transp)
+static uint32_t seq_note(uint32_t t, const step_t *s, uint32_t i, int32_t transp)
 {
+    if (t == 1u && pad_follow_enabled && pad_chord.valid)
+        return pad_chord_pitch((int32_t)s->note[i] + transp);
     return (uint32_t)clampi((int32_t)s->note[i] + transp, 1, 127);
 }
 static void seq_sound(uint32_t t, const step_t *s, int32_t transp)
 {
     seqrun_t *r = &sr[t];
     uint32_t i;
+    if (t == 1u && pad_follow_enabled && !pad_chord.valid) return;
     for (i = 0; i < SEQ_CHORD && s->note[i] && r->nsnd < SEQ_CHORD; i++) {
-        uint32_t n = seq_note(s, i, transp);
+        uint32_t n = seq_note(t, s, i, transp);
         if (seq_live(t, n) || ctl_rec_mute >> t & 1u) continue;
         TRACE('S', t, n);
         voice_trigger(t, n, s->vel ? s->vel : 100u);
         r->snd[r->nsnd++] = (uint8_t)n;
     }
 }
-static uint32_t seq_has(const step_t *s, uint32_t m, int32_t transp)   /* the step plays note m */
+static uint32_t seq_has(uint32_t t, const step_t *s, uint32_t m, int32_t transp)   /* the step plays note m */
 {
     uint32_t i;
     for (i = 0; i < SEQ_CHORD && s->note[i]; i++)
-        if (seq_note(s, i, transp) == m) return 1;
+        if (seq_note(t, s, i, transp) == m) return 1;
     return 0;
 }
 
@@ -140,13 +143,13 @@ static void seq_tie_into(uint32_t t, const step_t *s, int32_t transp, uint32_t p
     seqrun_t *r = &sr[t];
     uint32_t i, j, keep = 0;
     for (i = j = 0; i < r->nsnd; i++) {
-        if (play && seq_has(s, r->snd[i], transp)) { r->snd[j++] = r->snd[i]; keep++; }
+        if (play && seq_has(t, s, r->snd[i], transp)) { r->snd[j++] = r->snd[i]; keep++; }
         else if (!seq_live(t, r->snd[i])) voice_release(t, r->snd[i], 1);
     }
     r->nsnd = j;
-    if (!play) return;
+    if (!play || (t == 1u && pad_follow_enabled && !pad_chord.valid)) return;
     for (i = 0; i < SEQ_CHORD && s->note[i] && r->nsnd < SEQ_CHORD; i++) {
-        uint32_t m = seq_note(s, i, transp);
+        uint32_t m = seq_note(t, s, i, transp);
         for (j = 0; j < keep && r->snd[j] != m; j++) ;
         if (j < keep || seq_live(t, m) || ctl_rec_mute >> t & 1u) continue;
         voice_trigger(t, m, s->vel ? s->vel : 100u);
