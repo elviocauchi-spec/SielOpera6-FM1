@@ -13,6 +13,7 @@ on:
       - 'tests/vg1_gate_smoke.c'
       - 'tests/vg1_release_smoke.c'
       - 'tests/vg1_polyphony_smoke.c'
+      - 'tests/vg1_all_presets_headroom.c'
       - 'tools/vg1_audio_report.py'
       - 'tools/build.py'
       - '.github/workflows/v1-fm1.yml'
@@ -39,6 +40,10 @@ jobs:
         run: |
           gcc -std=c11 -O2 -Wall -Wextra -o /tmp/vg1_polyphony_smoke tests/vg1_polyphony_smoke.c
           /tmp/vg1_polyphony_smoke
+      - name: Audit all eight presets at one to eight notes through full effects chain
+        run: |
+          gcc -std=c11 -O2 -Wall -Wextra -o /tmp/vg1_all_presets_headroom tests/vg1_all_presets_headroom.c
+          /tmp/vg1_all_presets_headroom
 
   audio-reference:
     needs: host
