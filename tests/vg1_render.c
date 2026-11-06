@@ -202,6 +202,35 @@ static int render_gated_diagnostics(const char *base) {
 #undef RENDER_VARIANT
     return 0;
 }
+/* Drive A/B for every Vanguard program that actually uses AMP DRIVE.
+   Both variants have approximately equal pre-filter oscillator input gain:
+   otherwise switching DRIVE=0 would also disable the automatic hot-stack
+   trim and obscure what the drive itself contributes to the harmonics. */
+static int render_drive_comparisons(const char *base) {
+    char folder[512],path[640],name[64];
+    snprintf(folder,sizeof folder,"%s/drive_comparisons",base);
+    if(mkdir_if_needed(folder))return -1;
+    for(uint32_t i=0;i<V1_PRESETS;i++) {
+        v1_patch_t on=V1_FACTORY[i],off;
+        if(!on.vg_amp.drive)continue; /* Gated Motion and Saturn already clean */
+        off=on;
+        uint32_t trim=(uint32_t)vg1_stack_gain_q15(&on);
+        off.vg_amp.drive=0;
+        for(uint32_t k=0;k<3;k++)
+            off.osc[k].level=(uint8_t)(((uint32_t)on.osc[k].level*trim+16384u)>>15);
+        slug(name,sizeof name,on.name);
+        uint8_t note=(i==1u||i==4u)?43u:(i==2u||i==7u)?72u:60u;
+        snprintf(path,sizeof path,"%s/%02u_%s_SOLO_DRIVE_ON.wav",folder,i+1u,name);
+        if(write_wav(path,&on,3u*V1_SR,note,2u*V1_SR,0))return -1;
+        snprintf(path,sizeof path,"%s/%02u_%s_SOLO_DRIVE_OFF.wav",folder,i+1u,name);
+        if(write_wav(path,&off,3u*V1_SR,note,2u*V1_SR,0))return -1;
+        snprintf(path,sizeof path,"%s/%02u_%s_CHORD_DRIVE_ON.wav",folder,i+1u,name);
+        if(write_wav(path,&on,3u*V1_SR,note,2u*V1_SR,1))return -1;
+        snprintf(path,sizeof path,"%s/%02u_%s_CHORD_DRIVE_OFF.wav",folder,i+1u,name);
+        if(write_wav(path,&off,3u*V1_SR,note,2u*V1_SR,1))return -1;
+    }
+    return 0;
+}
 static int render_all(const char *base) {
     char folder[512],path[640],sname[64];
     uint32_t i;
@@ -225,6 +254,7 @@ static int render_all(const char *base) {
         if(write_wav(path,&p,V1_SR/2u,60u,V1_SR*4u/10u,0))return -1;
     }
     if(render_gated_diagnostics(base))return -1;
+    if(render_drive_comparisons(base))return -1;
     printf("VG-1 audio renders complete: %llu WAVs, %llu frames (44.1kHz stereo)\n",
             (unsigned long long)total_output_wavs,(unsigned long long)total_output_frames);
     return 0;
