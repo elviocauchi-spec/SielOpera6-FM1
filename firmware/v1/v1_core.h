@@ -8,7 +8,7 @@
 #define V1_CORE_H
 #include <stdint.h>
 #define V1_SR 44100u
-#define V1_VOICES 8u
+#define V1_VOICES 16u /* capacity, not hard-coded active polyphony */
 #define V1_OSCS 3u
 #define V1_SUPER 5u
 
@@ -30,6 +30,7 @@ typedef struct {
     uint16_t trance_mask; /* 16 genuinely editable steps; bit 0 is beat 1 */
     uint8_t trance_enabled, trance_rate, trance_depth;
     uint8_t master;
+    uint8_t voice_limit; /* 4..16; zero denotes conservative 8-voice default */
 } v1_patch_t;
 
 typedef struct { uint32_t ph[5], inc[5], base_inc[5]; uint32_t rng; } v1_osc_state_t;
@@ -274,7 +275,10 @@ static void v1_engine_init(v1_engine_t *e,const v1_patch_t *p) {
 }
 static void v1_note_on(v1_engine_t *e,uint8_t note,uint8_t vel) {
     uint32_t i,j,choice=0,oldest=0xffffffffu;
-    for(i=0;i<V1_VOICES;i++) {
+    uint32_t max=e->patch.voice_limit?e->patch.voice_limit:8u;
+    if(max>V1_VOICES)max=V1_VOICES;
+    if(max<1u)max=1u;
+    for(i=0;i<max;i++) {
         if(!e->voices[i].active) {choice=i;break;}
         if(e->voices[i].a.level<(int32_t)oldest) {oldest=(uint32_t)e->voices[i].a.level;choice=i;}
     }
