@@ -3,26 +3,22 @@
 Development branch `feature/pad-lab-chord-follow`. **Experimental source, not an FM-1 firmware release.** This branch leaves the existing OPERA firmware on `main` intact.
 
 ## Design intent
-- **You play every chord and every melody.** No autonomous lead, chord progression or generated melodic phrases.
-- **Track A** is the live keyboard pad. The chord detector listens to the actual track-A keyboard/MIDI note-on and note-off events.
-- **Track B** supplies a fixed, editable background ostinato. Its **rhythm stays fixed**, but its root/third/fifth/octave adapt to the latest complete chord played on A.
-- A newly created unsaved pattern gets a sparse eight-step C-major-reference accompaniment in B; existing saved patterns are not rewritten.
-- A new chord takes effect on the sequence's next triggered note. **Releasing the final keyboard key immediately disarms the backing**, sends note-offs to any sounding B voices, and prevents new B steps until another complete triad is played. The B amp envelope and shared reverb/delay fade naturally; the sequencer clock can continue while silent.
-- Recognized: major, minor, sus2, sus4 **three-note triads**, including inversions. Extended/ambiguous harmonies need further testing. When one or two notes remain held during a legato chord transition, the previous harmony persists until the next full chord. When **all keys are released**, the harmony is cleared. One or two new notes alone will not restart the backing.
-- Background sequence uses the existing step sequencer and engine. **No generative random pitch changes** are introduced.
-- The global BACKING page controls follow ON/OFF, B volume, division and accompaniment octave. These first-stage controls are runtime settings; **they are not persisted** after a restart yet.
+- **Track A is always the notes you play.** In PAD LAB audition mode, **track B arpeggiates the exact held MIDI notes** in ascending order. There is no guessed root, chord type, added fifth, replacement tone, or generated melody.
+- A single key works; two-note chords, inversions, dense chords and suspended chords all work without special cases. The B trigger rhythm is fixed and reproducible.
+- B uses four sustained triggers over two bars at default quarter-note SPEED, and wraps around the list of currently held keys: C-E-G -> C, E, G, C; D-F-A -> D, F, A, D.
+- Releasing a key immediately releases B's active copy of that pitch. Releasing **all** keys disarms B, cancels pending B hits and fades the sound naturally through the envelope/effects.
+- B runs only while PLAY transport is running and B ARP is ON. Press PLAY to stop the transport.
+- **PRESETS keeps the backing running while browsing sounds on A.** Previously PRESETS exited the demo, which was why B disappeared on other presets. Browsing sounds in the preview does not save them or overwrite your existing song/program choice.
+- The preview's B LEVEL changes ONLY the B mixer gain. It never applies a full mix reset, never changes A's gain/pan/sends and never writes the demo B setting into saved-song globals. Default B LEVEL is 112.
+- The original stored patterns, mixer and patch programs remain available outside the demo. The old chord-harmonizer module remains as an unused source file pending cleanup, but **it is not part of the playback or event path**.
 
-## First-stage screen/control map
-- **HOME / PAD:** TONE (cutoff), MOTION (filter LFO amount), WIDTH (voice spread), SPACE (reverb mix).
-- **GLO / BACKING:** FOLLOW, LEVEL B, SPEED, OCTAVE.
-- **SEQ:** retains the established step editor and pattern operations.
-- **ENV, LFO, FX, EDIT:** still open advanced sound-design pages.
-- **ALGORITHM:** selects track A-D, **PRESETS:** changes its sound.
-- **PLAY:** runs/stops the backing sequences. In PAD LAB demo mode, B is silent until a complete chord is played on A and stops triggering as soon as the last key is released, whether FOLLOW is ON or FIXED. Turning FOLLOW OFF outside the demo retains the legacy standalone sequencer behavior.
-- Current mixer and other navigation behavior remain transitional; full UI consolidation is a subsequent milestone.
-
-## C-major reference notes for the B sequencer
-Record/edit a fixed sequence using C4 (root), E4 (third), G4 (fifth), C5 (octave), and rests. The follower maps these notes to the chord you actually play, keeping octaves, velocity, step rhythm, chance, ratchets and gates. Other pitches snap to the closest triad role. It does **not** transpose the melody you play on A.
+## Performance controls
+- **HOME / PAD:** TONE, MOTION, WIDTH, SPACE, as before, to shape A's live sound.
+- **BACKING:** B ARP (on/off), B LEVEL (0-127), SPEED (division) and OCTAVE (explicit transposition of B, default 0 = played pitch).
+- **PRESETS:** browse track A sounds while the B arpeggiator continues to play.
+- **PLAY:** start/stop the backing rhythm.
+- **SELECT button on BACKING:** toggle audition mode and return to the saved arrangement.
+- **SEQ editor and ALGORITHM:** leave the audition to preserve existing independent track editing behavior.
 
 ## Build and safety
 ```sh
