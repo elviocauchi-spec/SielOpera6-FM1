@@ -64,11 +64,11 @@ typedef struct { int32_t ic1, ic2; } v1_svf_state_t;
 typedef struct { uint8_t stage; int32_t level, release_step; } v1_env_state_t;
 typedef struct {
     v1_osc_state_t osc[3];
-    v1_svf_state_t f1, f2;
+    v1_svf_state_t f1, f2, f1_right, f2_right;
     v1_env_state_t a, f;
     uint32_t age;
     int32_t drift;
-    int32_t fa1,fa2,fa3,fk,fb1,fb2,fb3,bk,pole6; /* control-rate coefficients and 6dB pole */
+    int32_t fa1,fa2,fa3,fk,fb1,fb2,fb3,bk,pole6,pole6_right; /* control-rate coefficients and 6dB pole */
     uint8_t note, velocity, gate, active;
 } v1_voice_t;
 
@@ -76,7 +76,7 @@ typedef struct {
     v1_patch_t patch;
     v1_voice_t voices[V1_VOICES];
     uint32_t note_age, rng;
-    uint32_t lfo_ph[3], frames, vibrato_ph;
+    uint32_t lfo_ph[3], frames, vibrato_ph, auto_pan_ph;
     int32_t lfo[3];
     volatile int32_t bend14;
     volatile uint8_t aftertouch;
@@ -210,19 +210,26 @@ static inline uint32_t v1_note_inc(int32_t note, int32_t cents) {
     return v1_detune_inc(inc, cents);
 }
 #include "vg1_wave_dsp.h"
-static inline int32_t v1_osc_sample(v1_osc_state_t *o, const v1_osc_patch_t *p,
-                                     uint32_t count,int32_t pwm_mod) {
-    uint32_t j;
-    int32_t sum=0;
-    uint32_t pw=vg1_pw(p->pw,pwm_mod);
-    if(!p->level || p->wave==VG1_W_OFF) return 0;
-    if(count<1) count=1;
-    if(count>V1_SUPER) count=V1_SUPER;
-    for(j=0;j<count;j++) {
-        uint32_t inc=o->inc[j], ph=(o->ph[j]+=inc);
-        sum+=vg1_wave_eval(o,ph,inc,pw,p->wave);
+/* Each FAT/VCS component is rendered ONCE and goes to its own stereo
+ * channel. This is essential to Vanguard's FAT stereo detune character:
+ * summing all FAT oscillators to mono destroys the intended width. */
+static inline void vg1_osc_stereo(v1_osc_state_t *o,const v1_osc_patch_t *p,
+    uint32_t count,int32_t pwm_mod,int32_t *left,int32_t *right) {
+    if(!p->level||p->wave==VG1_W_OFF)return;
+    if(count<1u)count=1u;
+    if(count>V1_SUPER)count=V1_SUPER;
+    uint32_t pw=vg1_pw(p->pw,pwm_mod),i;
+    int32_t sl=0,sr=0;
+    for(i=0;i<count;i++) {
+        uint32_t step=o->inc[i],phase=(o->ph[i]+=step);
+        int32_t sample=vg1_wave_eval(o,phase,step,pw,p->wave);
+        if(count==1u)sl=sr=sample;
+        else if(i&1u)sr+=sample;
+        else sl+=sample;
     }
-    return (sum/(int32_t)count)*(int32_t)p->level>>7;
+    if(count>1u){sl/=(int32_t)((count+1u)/2u);sr/=(int32_t)(count/2u);}
+    *left+=(sl*(int32_t)p->level)>>7;
+    *right+=(sr*(int32_t)p->level)>>7;
 }
 static inline uint32_t v1_duration(uint8_t knob) {
     /* 0 ~= 0.7ms; 127 ~= 2s. Exact knob curve is independent of Opera. */
@@ -317,7 +324,10 @@ static void v1_note_on(v1_engine_t *e,uint8_t note,uint8_t vel) {
     }
     v1_voice_t *v=&e->voices[choice];
     v->active=1;v->gate=1;v->note=note;v->velocity=vel?vel:1;
-    v->age=++e->note_age;v->f1.ic1=v->f1.ic2=v->f2.ic1=v->f2.ic2=v->pole6=0;
+    v->age=++e->note_age;
+    v->f1.ic1=v->f1.ic2=v->f2.ic1=v->f2.ic2=0;
+    v->f1_right.ic1=v->f1_right.ic2=v->f2_right.ic1=v->f2_right.ic2=0;
+    v->pole6=v->pole6_right=0;
     v1_env_attack(&v->a);v1_env_attack(&v->f);
     if(e->patch.vg_osc.retrig) {
         for(i=0;i<3;i++) if(e->patch.vg_lfo[i].retrig)e->lfo_ph[i]=0;
@@ -437,7 +447,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
     if(!gate_frames)gate_frames=1;
     arp_release=(step_frames*(arp_gate+1u))/128u;
     for(f=0;f<n;f++) {
-        int32_t dry=0, left,right;
+        int32_t dryl=0,dryr=0,left,right;
         if(v1_arp_mode(p)!=V1_ARP_OFF){
             if(e->arp_phase==0 && e->held_count)v1_arp_tick(e);
             if(e->arp_active && e->arp_phase > arp_release) {
@@ -466,7 +476,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         int32_t vibc=(vib_depthc*v1_sine_sample(e->vibrato_ph))>>15;
         for(i=0;i<V1_VOICES;i++) {
             v1_voice_t *v=&e->voices[i];
-            int32_t s=0,fe,amp,cut;
+            int32_t sl=0,sr=0,fe,amp,cut;
             if(!v->active)continue;
             /* Pitch modulation applies to ALL three oscillators, including
              * every supersaw component. No oscillator's base pitch drifts. */
@@ -494,10 +504,10 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
                 int32_t pwm=((int32_t)p->vg_lfo[j].pwm*e->lfo[j])>>15;
                 pwm+=((int32_t)p->vg_env1.pwm*amp)>>15;
                 pwm+=((int32_t)p->vg_env2.pwm*fe)>>15;
-                s+=v1_osc_sample(&v->osc[j],&p->osc[j],vcs,pwm);
+                vg1_osc_stereo(&v->osc[j],&p->osc[j],vcs,pwm,&sl,&sr);
             }
-            s=v1_clip(s,-50000,50000);
-            if(p->drive)s=v1_sat16(s+((int32_t)p->drive*s>>7));
+            sl=v1_clip(sl,-50000,50000);
+            sr=v1_clip(sr,-50000,50000);
             cut=(int32_t)p->cutoff
                + (((int32_t)p->vg_env1.cutoff*amp)>>15)
                + (((int32_t)p->vg_env2.cutoff*fe)>>15)
@@ -518,14 +528,35 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
                 c.a1=v->fa1;c.a2=v->fa2;c.a3=v->fa3;c.k=v->fk;
                 c2.a1=v->fb1;c2.a2=v->fb2;c2.a3=v->fb3;c2.k=v->bk;
             }
-            s=vg1_filter_render(v,&c,&c2,s,p->filter_type);
-            amp=(amp*(int32_t)v->velocity)>>7;
-            if(p->vg_env1.level)amp=v1_clip((amp*(int32_t)(127+p->vg_env1.level))>>7,0,32767);
-            if(p->lfo_amp)amp=(amp*(32767-((p->lfo_amp*(e->lfo[2]+32768))>>8)))>>15;
-            s=(s*amp)>>15;
-            dry+=s;
+            sl=vg1_filter_render(&v->f1,&v->f2,&v->pole6,&c,&c2,sl,p->filter_type);
+            sr=vg1_filter_render(&v->f1_right,&v->f2_right,&v->pole6_right,
+                                  &c,&c2,sr,p->filter_type);
+            if(p->vg_amp.drive) {
+                sl=v1_sat16(sl+((sl*(int32_t)p->vg_amp.drive)>>7));
+                sr=v1_sat16(sr+((sr*(int32_t)p->vg_amp.drive)>>7));
+            }
+            /* Vanguard VELTRK=0 means NO velocity sensitivity. Positive
+             * tracking grows with velocity; negative tracking reverses it. */
+            int32_t vel_gain=v1_clip(16384+
+                ((int32_t)v->velocity-64)*(int32_t)p->vg_amp.veltrk*4,0,32767);
+            amp=(amp*vel_gain)>>14;
+            if(p->vg_env1.level)
+                amp=v1_clip((amp*(127+(int32_t)p->vg_env1.level))>>7,0,32767);
+            amp=(amp*(int32_t)p->vg_amp.level)>>7;
+            sl=(sl*amp)>>15;
+            sr=(sr*amp)>>15;
+            dryl+=sl;
+            dryr+=sr;
         }
-        dry=v1_clip(dry,-65535,65535);
+        dryl=v1_clip(dryl,-65535,65535);
+        dryr=v1_clip(dryr,-65535,65535);
+        /* AMP PAN plus the original SPREAD autopanning parameter.
+           Oscillator FAT stereo survives this stage. */
+        e->auto_pan_ph+=131072u;
+        int32_t pan=v1_clip((int32_t)p->vg_amp.pan+
+                  ((int32_t)p->vg_amp.spread*v1_sine_sample(e->auto_pan_ph)>>16),0,127);
+        dryl=(dryl*(254-pan*2))/127;
+        dryr=(dryr*(pan*2))/127;
         /* Gate is applied to stereo after per-voice synthesis, not copied into
            each oscillator. ReFX 1.6 permits independent L/R gate patterns. */
         /* The original Vanguard has no chorus block. Remove the generic
@@ -533,8 +564,8 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         int32_t mix=p->vg_gate.enabled?p->vg_gate.mix:p->trance_depth;
         int32_t gl=on?(32767-((int32_t)mix*(32767-e->gate_smooth)/127)):32767;
         int32_t gr=on?(32767-((int32_t)mix*(32767-e->gate_smooth_right)/127)):32767;
-        left=(dry*gl)>>15;
-        right=(dry*gr)>>15;
+        left=(dryl*gl)>>15;
+        right=(dryr*gr)>>15;
         /* Original Vanguard order: TRANCEGATE -> DELAY -> REVERB.
            Delay supports the documented mono, stereo, cross and widen modes. */
         uint32_t dl=e->delay_pos&32767u;
