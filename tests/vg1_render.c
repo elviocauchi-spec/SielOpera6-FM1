@@ -99,7 +99,7 @@ static int write_wav(const char *path,const v1_patch_t *patch,uint32_t frames,
     fclose(f);
     total_output_frames+=frames;
     total_output_wavs++;
-    printf("rendered %-40s frames=%u\n",path,frames);
+    printf("rendered %-40s frames=%u peak_preclip=%u\n",path,frames,engine.render_peak);
     return 0;
 }
 static v1_patch_t diagnostic_patch(uint32_t type) {
