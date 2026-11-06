@@ -21,6 +21,7 @@ static void vg1_audio_isr_load(uint32_t elapsed_ticks,uint32_t frames);
 
 static v1_engine_t v1 __attribute__((section(".pool")));
 static volatile uint32_t req_program;
+static uint8_t vg1_midi_bank; /* MIDI CC0: 0=VG1 authored, 1=ProSounds */
 static volatile uint32_t vg1_panic_requested;
 static uint32_t got_program, page, octave, bpm=128, panel_last;
 static vg1_key_router_t v1_keyboard;
@@ -372,6 +373,10 @@ static void v1_panel_draw(void) {
     uint16_t bg=RGB(8,10,22), rule=RGB(58,73,105), high=RGB(67,216,223), warm=RGB(244,193,105);
     cv_begin(240,112,bg);
     cv_text(9,4,&FONT_S,"VG-1  /  FM1",high);
+    cv_text(150,4,&FONT_S,got_program>=VG1_AUTHORED_PRESETS?"PS":"VG1",warm);
+    v1_num(tmp,got_program>=VG1_AUTHORED_PRESETS?
+            got_program-VG1_AUTHORED_PRESETS+1u:got_program+1u);
+    cv_text(195,4,&FONT_S,tmp,high);
     cv_text(9,24,&FONT_S,p->name,RGB(236,235,242));
     cv_rect(8,44,224,1,rule);
     cv_text(9,50,&FONT_S,UI_TITLES[pg],warm);
@@ -425,13 +430,22 @@ static void v1_midi(void) {
         uint32_t kind=st&0xf0u;
         if(kind==0x90u && d2)v1_queue(1,d1,d2);
         else if(kind==0x80u || (kind==0x90u&&!d2))v1_queue(0,d1,0);
-        else if(kind==0xc0u)req_program=d1%V1_PRESETS;
+        else if(kind==0xc0u) {
+            /* 128 physical MIDI PC numbers address the complete 128-slot
+               user-supplied bank with CC0=1. CC0=0 retains all eight
+               original VG1 authored sounds. The encoder accesses 136. */
+            req_program=vg1_midi_bank?
+                VG1_AUTHORED_PRESETS+(uint32_t)d1:
+                (uint32_t)d1%VG1_AUTHORED_PRESETS;
+        }
         else if(kind==0xe0u)v1.bend14=(int32_t)(((uint32_t)d2<<7)|d1)-8192;
         else if(kind==0xd0u)v1.aftertouch=d1;
         else if(kind==0xb0u){
             /* CC assignments taken from Vanguard 1 manual appendix B.
                Volume and expression are independent of patch AMP LEVEL. */
             switch(d1) {
+                case 0:  vg1_midi_bank=d2?1u:0u; break; /* bank MSB */
+                case 32: vg1_midi_bank=d2?1u:0u; break; /* bank LSB */
                 case 1:  v1.modwheel=d2; break;                    /* filter cutoff addition */
                 case 7:  v1.midi_volume=d2; break;
                 case 8:  v1.patch.vg_amp.spread=d2; break;
@@ -485,7 +499,7 @@ static void app_main(void) {
         e=fm1_enc_take(ENC_SELECT);
         if(e)page=v1_bound((int32_t)page+(e>0?1:-1),UI_PAGES-1);
         e=fm1_enc_take(ENC_PRESETS);
-        if(e)req_program=v1_bound((int32_t)req_program+(e>0?1:-1),V1_PRESETS-1);
+        if(e)req_program=v1_bound((int32_t)req_program+e,V1_PRESETS-1);
         e=fm1_enc_take(ENC_ALGORITHM);
         if(e){bpm=v1_bound((int32_t)bpm+e,V1_BPM_MAX);if(bpm<V1_BPM_MIN)bpm=V1_BPM_MIN;}
         for(k=0;k<4;k++){
