@@ -32,6 +32,19 @@ static int mkdir_if_needed(const char *s) {
     if(mkdir(s,0755)==0||errno==EEXIST)return 0;
     perror(s);return -1;
 }
+static int mkdir_tree(const char *path) {
+    char tmp[512];
+    size_t i,len=strlen(path);
+    if(!len||len>=sizeof(tmp))return -1;
+    memcpy(tmp,path,len+1);
+    for(i=1;i<len;i++)if(tmp[i]=='/'||tmp[i]=='\\') {
+        char save=tmp[i];
+        tmp[i]=0;
+        if(mkdir_if_needed(tmp)){return -1;}
+        tmp[i]=save;
+    }
+    return mkdir_if_needed(tmp);
+}
 static void slug(char *dst,size_t cap,const char *src) {
     size_t i=0;
     while(*src&&i+1u<cap) {
@@ -86,7 +99,7 @@ static int write_wav(const char *path,const v1_patch_t *patch,uint32_t frames,
     fclose(f);
     total_output_frames+=frames;
     total_output_wavs++;
-    printf("rendered %-40s frames=%u\\n",path,frames);
+    printf("rendered %-40s frames=%u\n",path,frames);
     return 0;
 }
 static v1_patch_t diagnostic_patch(uint32_t type) {
@@ -121,7 +134,7 @@ static v1_patch_t diagnostic_patch(uint32_t type) {
 static int render_all(const char *base) {
     char folder[512],path[640],sname[64];
     uint32_t i;
-    if(mkdir_if_needed(base))return -1;
+    if(mkdir_tree(base))return -1;
     snprintf(folder,sizeof(folder),"%s/presets",base);
     if(mkdir_if_needed(folder))return -1;
     for(i=0;i<V1_PRESETS;i++) {
@@ -140,11 +153,11 @@ static int render_all(const char *base) {
         snprintf(path,sizeof path,"%s/%02u_%s_C4.wav",folder,i,sname);
         if(write_wav(path,&p,V1_SR/2u,60u,V1_SR*4u/10u,0))return -1;
     }
-    printf("VG-1 audio renders complete: %llu WAVs, %llu frames (44.1kHz stereo)\\n",
+    printf("VG-1 audio renders complete: %llu WAVs, %llu frames (44.1kHz stereo)\n",
             (unsigned long long)total_output_wavs,(unsigned long long)total_output_frames);
     return 0;
 }
 int main(int argc,char **argv) {
-    if(argc!=2) {fprintf(stderr,"Usage: %s output-directory\\n",argv[0]);return 2;}
+    if(argc!=2) {fprintf(stderr,"Usage: %s output-directory\n",argv[0]);return 2;}
     return render_all(argv[1])?1:0;
 }
