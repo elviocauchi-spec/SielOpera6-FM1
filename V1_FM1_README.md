@@ -1,3 +1,8 @@
+> **Superseded.** This file documents the abandoned generic V-1 prototype.
+> The active project is the **original reFX Vanguard 1.x recreation**:
+> [VG1_VANGUARD_RECREATION.md](VG1_VANGUARD_RECREATION.md).
+> Please use that document for the current architecture, validation and build.
+>
 # V-1 FM1 — independent trance synthesizer for M-VAVE FM1
 
 **Development status:** V-1 0.1 experimental. Host DSP tests pass. The first firmware CI
