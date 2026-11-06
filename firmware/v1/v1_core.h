@@ -106,7 +106,8 @@ typedef struct {
     uint32_t diag_frames_active,diag_gate_edges;
     uint32_t diag_poly_mix_over,diag_poly_mix_16_over;
     uint32_t diag_pan_over,diag_predelay_over;
-    uint32_t diag_post_gain_clamp;
+    uint32_t diag_post_gain_clamp,diag_drive_plateau;
+    uint32_t diag_osc_raw_over;
 #endif
 } v1_engine_t;
 
@@ -176,6 +177,31 @@ static inline uint32_t v1_rand(uint32_t *state) {
     return *state;
 }
 static inline int32_t v1_sat16(int32_t x) { return v1_clip(x,-32767,32767); }
+/* A short, smooth-knee AMP DRIVE transfer, not hard clipping.
+   |x| <= 16384 stays perfectly linear; a quadratic knee approaches full
+   scale with ZERO slope at 49152. At or above 49152 it saturates smoothly.
+   The product is <= 32768*32768 and fits signed 32-bit; no division, float,
+   table or expensive 64-bit math in the FM1 audio callback. */
+static inline int32_t vg1_soft_drive(int32_t x) {
+    uint32_t a=(uint32_t)(x<0?-(int64_t)x:x);
+    if(a<=16384u)return x;
+    if(a>=49152u)return x<0?-32767:32767;
+    int32_t u=(int32_t)a-16384;
+    int32_t y=16384+u-((u*u)>>16);
+    return x<0?-y:y;
+}
+/* Normalize excessive multi-oscillator source levels BEFORE the
+   resonant filter/AMP DRIVE, rather than attenuating an already-clipped
+   signal after the fact. Clean, no-drive patches retain their existing
+   levels, including Gated Motion and Saturn Pad. */
+static inline int32_t vg1_stack_gain_q15(const v1_patch_t *p) {
+    uint32_t total=0;
+    for(uint32_t k=0;k<3;k++)
+        if(p->osc[k].wave!=VG1_W_OFF)total+=p->osc[k].level;
+    uint32_t limit=p->vg_amp.drive?140u:255u;
+    if(total<=limit)return 32767;
+    return (int32_t)((limit*32767u)/total);
+}
 
 /* BLEP correction for one discontinuity, computed in fixed point.
  * Only the two samples adjacent to an edge require division. */
@@ -541,6 +567,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         fixed_vcs=e->runtime_fat_limit;
     e->last_render_vcs=(uint8_t)fixed_vcs;
     const int32_t poly_gain_target=vg1_poly_bus_target(sounding_voices);
+    const int32_t stack_gain_q8=vg1_stack_gain_q15(p)>>7;
     /* Only dual-path modes need the second coefficient / second division. */
     const uint32_t dual_filter=p->filter_type==VG1_F_X ||
         p->filter_type==VG1_F_FORMANT || p->filter_type==VG1_F_M;
@@ -638,6 +665,16 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
                 vg1_osc_stereo(&v->osc[j],&p->osc[j],vcs,pwm,&sl,&sr);
             }
 #ifdef VG1_AUDIO_DIAGNOSTICS
+            if(sl>50000||sl<-50000||sr>50000||sr<-50000)
+                e->diag_osc_raw_over++;
+#endif
+            /* Apply the stack trim while the entire oscillator sum remains
+               32-bit; never clip each oscillator or discard its harmonics.
+               This makes high-level Heaven Lead/Floor Shaker/Acid Runner
+               patches cleanable without changing their waveform menus. */
+            sl=(sl*stack_gain_q8)>>8;
+            sr=(sr*stack_gain_q8)>>8;
+#ifdef VG1_AUDIO_DIAGNOSTICS
             if(sl>50000||sl<-50000||sr>50000||sr<-50000)e->diag_osc_over++;
 #endif
             sl=v1_clip(sl,-50000,50000);
@@ -677,11 +714,15 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
                 int32_t dl=sl+((sl*(int32_t)p->vg_amp.drive)>>7);
                 int32_t dr=sr+((sr*(int32_t)p->vg_amp.drive)>>7);
 #ifdef VG1_AUDIO_DIAGNOSTICS
+                /* Above 16-bit is normal for analog-style drive, but never
+                   hard-clip that gain into a digital square wave. */
                 if(dl>32767||dl<-32767||dr>32767||dr<-32767)
                     e->diag_drive_over++;
+                if(dl>=49152||dl<=-49152||dr>=49152||dr<=-49152)
+                    e->diag_drive_plateau++;
 #endif
-                sl=v1_sat16(dl);
-                sr=v1_sat16(dr);
+                sl=vg1_soft_drive(dl);
+                sr=vg1_soft_drive(dr);
             }
             /* Vanguard VELTRK=0 means NO velocity sensitivity. Positive
              * tracking grows with velocity; negative tracking reverses it. */
