@@ -1063,7 +1063,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             int32_t value=e->reverb_mem[j][index];
             e->reverb_lp[j]+=(value-e->reverb_lp[j])*reverb_damp_gain/127;
             int32_t fb=e->reverb_lp[j];
-            if(j>=2u)
+            if(j>=2u && e->reverb_late_gain_q15<32767)
                 fb=(fb*e->reverb_late_gain_q15)>>15;
             if(j&1u) wetr+=fb; else wetl+=fb;
             int32_t rw=(rev_in>>1)+((fb*96)>>7);
