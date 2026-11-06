@@ -89,7 +89,7 @@ static void pat_factory(uint32_t n, pattern_t *p)   /* a pattern never saved: pa
     pat_init(p);
     /* A is for playing pads. B: eight steps of simple chord tones with rests,
        using C4/E4/G4 as root/third/fifth roles. Entirely deterministic. */
-    p->trk[0].len = 0;                   /* no automatic lead or note generation on A */
+    /* Track A retains an EMPTY editable 16-step lane for recording; it never plays notes until you record them. */
     p->trk[1].len = 8;
     p->trk[1].div = D_8;
     p->st[1][0].note[0] = 60u; p->st[1][0].vel = 76u;
