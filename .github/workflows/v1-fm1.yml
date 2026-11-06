@@ -51,7 +51,7 @@ jobs:
       - name: Benchmark exact 256-frame DSP, legacy versus optimized control-rate
         run: |
           gcc -std=c11 -O2 -Wall -Wextra -DVG1_LEGACY_ENVELOPES -DVG1_LEGACY_FAT_DIVIDE -DVG1_LEGACY_OSC_LOOP -DVG1_LEGACY_SCAN_ALL -o /tmp/vg1_cpu_bench_old tests/vg1_cpu_bench.c
-          gcc -std=c11 -O2 -Wall -Wextra -o /tmp/vg1_cpu_bench_fast tests/vg1_cpu_bench.c
+          gcc -std=c11 -O2 -Wall -Wextra -DVG1_RENDER_OVERWRITE -o /tmp/vg1_cpu_bench_fast tests/vg1_cpu_bench.c
           /tmp/vg1_cpu_bench_old > /tmp/vg1_old_bench.log
           /tmp/vg1_cpu_bench_fast > /tmp/vg1_fast_bench.log
           python3 tools/vg1_cpu_benchmark_report.py /tmp/vg1_old_bench.log /tmp/vg1_fast_bench.log
@@ -70,7 +70,7 @@ jobs:
         with:
           python-version: '3.x'
       - name: Compile exact firmware core and preset bank for desktop WAV playback
-        run: gcc -std=c11 -O2 -Wall -Wextra -o /tmp/vg1_render tests/vg1_render.c
+        run: gcc -std=c11 -O2 -Wall -Wextra -DVG1_RENDER_OVERWRITE -o /tmp/vg1_render tests/vg1_render.c
       - name: Render eight presets and 31 oscillator modes at 44.1kHz stereo
         run: /tmp/vg1_render build/vg1-audio
       - name: Audit silence, clipping, stereo, spectral signatures and preset identity
