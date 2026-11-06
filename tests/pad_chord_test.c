@@ -16,14 +16,31 @@ int main(void)
     assert(pad_chord_pitch(64) == 65);
     assert(pad_chord_pitch(67) == 69);
     assert(pad_chord_pitch(72) == 74);
-    key(0, 62); key(0, 65); key(0, 69); /* releasing keys keeps the harmony */
-    assert(pad_chord.root == 2 && pad_chord.valid);
+    /* Do not shut the accompaniment off while the player still holds
+     * part of a transitioning chord; only the LAST key-off gates B. */
+    key(0, 62); key(0, 65);
+    assert(pad_chord.valid && pad_chord.count == 1u);
+    assert((pad_chord_harmony & 0x100u) != 0u);
+    const uint32_t armed_revision = pad_chord.revision;
+    key(0, 69); /* the last release must STOP the chord follower */
+    assert(!pad_chord.valid && pad_chord.count == 0u);
+    assert(pad_chord_harmony == 0u);
+    assert(pad_chord.revision == armed_revision + 1u);
+    /* Stray releases and one/two notes cannot resurrect the old chord. */
+    key(0, 69);
+    assert(pad_chord.revision == armed_revision + 1u);
+    key(1, 67); key(1, 71);
+    assert(!pad_chord.valid && pad_chord_harmony == 0u);
+    key(1, 74);
+    assert(pad_chord.valid && (pad_chord_harmony & 0x100u));
+    /* Only a NEW complete chord is allowed to re-arm B. */
     key(1, 67); key(1, 71); key(1, 74); /* G major */
     assert(pad_chord.root == 7 && pad_chord.third == 4);
     assert(pad_chord_pitch(60) == 67);
     assert(pad_chord_pitch(64) == 71);
     assert(pad_chord_pitch(67) == 74);
     key(0, 67); key(0, 71); key(0, 74);
+    assert(!pad_chord.valid && pad_chord_harmony == 0u);
     key(1, 64); key(1, 67); key(1, 72); /* C major, first inversion */
     assert(pad_chord.root == 0 && pad_chord.third == 4);
     key(0, 64); key(0, 67); key(0, 72);
