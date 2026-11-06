@@ -82,6 +82,9 @@ typedef struct {
     /* Second smoothing pole softens the corners of fast Trancegate cuts
        without smearing the underlying 16-step timing. */
     int32_t gate_out_left,gate_out_right;
+    /* Separate voice-bus gain: protects the 32-bit polyphonic sum before
+       its gate, delay and reverb, without touching oscillator/filter tone. */
+    int32_t poly_gain_q15;
     uint8_t held[16], held_velocity[16], held_count, arp_pos;
     uint8_t arp_note, arp_active, arp_direction;
     uint32_t arp_phase;
@@ -330,6 +333,19 @@ static inline int32_t vg1_gate_smooth(int32_t current,int32_t target,int32_t alp
    stereo FAT at four held notes instead of dropping the fourth note and
    forcing CPU past 100%. The budget is deliberately conservative until
    measured on the actual FM1. User's VCS setting remains the quality ceiling. */
+/* Q15 gain targets for 0..16 simultaneously sounding voices.
+   Preserve the clean 1..3 note voicing unchanged; introduce headroom
+   before the 5th voice pushes the mixer above its linear range.
+   Beyond 4 voices the attenuation is approximately reciprocal to the
+   summed chord density, not a hard limiter at the DAC. */
+static inline int32_t vg1_poly_bus_target(uint32_t voices) {
+    static const uint16_t gain[17] = {
+        32767,32767,32767,32767,30000,24000,20700,17800,15800,
+        14100,12600,11400,10400,9600,8900,8300,7800
+    };
+    if(voices>16u)voices=16u;
+    return gain[voices];
+}
 static inline uint32_t vg1_fat_render_count(const v1_patch_t *p,
                                              uint32_t voice_count) {
     uint32_t configured=p->vg_osc.fat?(p->vg_osc.vcs?p->vg_osc.vcs:2u):1u;
@@ -360,6 +376,7 @@ static void v1_engine_init(v1_engine_t *e,const v1_patch_t *p) {
     e->tempo_bpm=128u;
     e->gate_smooth=e->gate_smooth_right=32767;
     e->gate_out_left=e->gate_out_right=32767;
+    e->poly_gain_q15=32767;
 }
 static void v1_note_on(v1_engine_t *e,uint8_t note,uint8_t vel) {
     uint32_t i,j,choice=0,oldest=0xffffffffu,legato=0;
@@ -522,6 +539,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
     if(e->runtime_fat_limit && fixed_vcs>e->runtime_fat_limit)
         fixed_vcs=e->runtime_fat_limit;
     e->last_render_vcs=(uint8_t)fixed_vcs;
+    const int32_t poly_gain_target=vg1_poly_bus_target(sounding_voices);
     /* Only dual-path modes need the second coefficient / second division. */
     const uint32_t dual_filter=p->filter_type==VG1_F_X ||
         p->filter_type==VG1_F_FORMANT || p->filter_type==VG1_F_M;
@@ -683,6 +701,22 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         if(dryl>32767||dryl<-32767||dryr>32767||dryr<-32767)
             e->diag_poly_mix_16_over++;
 #endif
+        /* Previous code hard-clipped the dry voice sum at +/-65535,
+           producing distorted chords despite a clean master output.
+           Now apply smoothed polyphonic headroom to the ORIGINAL 32-bit
+           sum BEFORE pan, Trancegate, delay and reverb. The Q15->Q8
+           conversion keeps the multiply safe on the AC79 without int64.
+           Attack reduces gain in ~1ms, recovery is slower to avoid pumps. */
+        int32_t gain_delta=poly_gain_target-e->poly_gain_q15;
+        int32_t gain_step=gain_delta>>(gain_delta<0?5:9);
+        if(!gain_step && gain_delta)gain_step=gain_delta<0?-1:1;
+        e->poly_gain_q15+=gain_step;
+        const int32_t poly_gain_q8=e->poly_gain_q15>>7;
+        dryl=(dryl*poly_gain_q8)>>8;
+        dryr=(dryr*poly_gain_q8)>>8;
+        /* Extremely dense custom patches can still exceed the intended
+           voice-bus range. This guard is a final fail-safe, not a normal
+           part of Gated Motion's signal path. */
         dryl=v1_clip(dryl,-65535,65535);
         dryr=v1_clip(dryr,-65535,65535);
         /* AMP PAN plus the original SPREAD autopanning parameter.
