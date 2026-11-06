@@ -144,6 +144,44 @@ static v1_patch_t diagnostic_patch(uint32_t type) {
     p.master=85;p.voice_limit=1; /* fixed diagnostic headroom: peak PWM waveform must not clip */
     return p;
 }
+/* Diagnostic isolation pack for users who report that GATED MOTION still
+ * sounds crunchy. Use the exact factory program, same C4 major chord,
+ * timing, FAT/FX algorithm and DSP; toggle ONE signal-path component.
+ * Only the no-gate version has reduced output master headroom. */
+static int render_gated_diagnostics(const char *base) {
+    char folder[512],path[640];
+    v1_patch_t p;
+    snprintf(folder,sizeof(folder),"%s/diagnostics",base);
+    if(mkdir_if_needed(folder))return -1;
+#define RENDER_VARIANT(file) do { \
+    snprintf(path,sizeof(path),"%s/" file ".wav",folder); \
+    if(write_wav(path,&p,PRESET_SECONDS*V1_SR,60u,2u*V1_SR,1))return -1; \
+}while(0)
+    p=V1_FACTORY[3];
+    RENDER_VARIANT("01_ORIGINAL_PRESET");
+    p=V1_FACTORY[3]; p.vg_delay.on=0; p.vg_reverb.on=0;
+    RENDER_VARIANT("02_GATE_ON_NO_FX");
+    p=V1_FACTORY[3]; p.vg_gate.enabled=0;
+    p.vg_delay.on=0; p.vg_reverb.on=0; p.master=38;
+    RENDER_VARIANT("03_NO_GATE_NO_FX");
+    p=V1_FACTORY[3]; p.vg_osc.fat=0;
+    p.vg_delay.on=0; p.vg_reverb.on=0;
+    RENDER_VARIANT("04_NO_FAT_GATE_ONLY");
+    p=V1_FACTORY[3]; p.osc[1].level=0;p.osc[2].level=0;
+    p.vg_delay.on=0; p.vg_reverb.on=0;
+    RENDER_VARIANT("05_AJX_SAW3_ONLY");
+    p=V1_FACTORY[3]; p.osc[0].level=0;p.osc[2].level=0;
+    p.vg_delay.on=0; p.vg_reverb.on=0;
+    RENDER_VARIANT("06_PWM_PULSE_ONLY");
+    p=V1_FACTORY[3]; p.osc[0].level=0;p.osc[1].level=0;
+    p.vg_delay.on=0; p.vg_reverb.on=0;
+    RENDER_VARIANT("07_SAW_ONLY");
+    p=V1_FACTORY[3]; p.vg_amp.drive=0;
+    p.vg_delay.on=0; p.vg_reverb.on=0;
+    RENDER_VARIANT("08_GATE_WITHOUT_DRIVE");
+#undef RENDER_VARIANT
+    return 0;
+}
 static int render_all(const char *base) {
     char folder[512],path[640],sname[64];
     uint32_t i;
@@ -166,6 +204,7 @@ static int render_all(const char *base) {
         snprintf(path,sizeof path,"%s/%02u_%s_C4.wav",folder,i,sname);
         if(write_wav(path,&p,V1_SR/2u,60u,V1_SR*4u/10u,0))return -1;
     }
+    if(render_gated_diagnostics(base))return -1;
     printf("VG-1 audio renders complete: %llu WAVs, %llu frames (44.1kHz stereo)\n",
             (unsigned long long)total_output_wavs,(unsigned long long)total_output_frames);
     return 0;
