@@ -203,8 +203,8 @@ static inline int32_t vg1_stack_gain_q15(const v1_patch_t *p) {
         limit=140u;
         /* High-Q / high-drive patches need enough resonant-filter
            headroom to avoid hitting the drive knee ceiling altogether. */
-        if(p->vg_amp.drive>=64u)limit=105u;
-        if(p->resonance>=70u)limit=64u;
+        if(p->vg_amp.drive>=64u)limit=90u;
+        if(p->resonance>=70u)limit=40u;
     }
     if(total<=limit)return 32768; /* true unity: Q8=256 */
     return (int32_t)((limit*32768u)/total);
@@ -374,8 +374,8 @@ static inline int32_t vg1_gate_smooth(int32_t current,int32_t target,int32_t alp
    summed chord density, not a hard limiter at the DAC. */
 static inline int32_t vg1_poly_bus_target(uint32_t voices) {
     static const uint16_t gain[17] = {
-        32767,32767,32767,32767,30000,24000,20700,17800,15800,
-        14100,12600,11400,10400,9600,8900,8300,7800
+        32767,32767,32767,32767,27500,22000,19000,16300,14400,
+        12900,11600,10400,9500,8750,8100,7600,7100
     };
     if(voices>16u)voices=16u;
     return gain[voices];
@@ -577,9 +577,10 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
     /* A driven patch has harmonics with higher inter-voice peaks than
        Gated Motion. Reserve extra gain before FX for dense driven chords,
        while preserving the original exact one-note drive/voicing. */
-    if(sounding_voices>=3u && p->vg_amp.drive) {
-        uint32_t pct=92u-((uint32_t)p->vg_amp.drive>>1);
-        if(pct<48u)pct=48u;
+    if(sounding_voices>=2u && p->vg_amp.drive) {
+        uint32_t pct=(sounding_voices==2u ? 92u-((uint32_t)p->vg_amp.drive/3u)
+                                             :84u-((uint32_t)p->vg_amp.drive>>1));
+        if(pct<40u)pct=40u;
         poly_gain_target=(poly_gain_target*(int32_t)pct)/100;
     }
     const int32_t stack_gain_q8=vg1_stack_gain_q15(p)>>7;
