@@ -84,7 +84,8 @@ typedef struct {
     uint32_t delay_pos;
     int32_t delay_lp[2],reverb_lp[4];
     int16_t reverb_mem[4][2048];
-    uint32_t reverb_pos;
+    int16_t reverb_predelay[8192]; /* 0..127ms at 44.1 kHz */
+    uint32_t reverb_prepos,reverb_pos;
     uint32_t render_peak;
 } v1_engine_t;
 
@@ -578,8 +579,16 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         e->delay_mem[0][dl]=(int16_t)v1_sat16(left+((fl*dfb)>>7));
         e->delay_mem[1][dl]=(int16_t)v1_sat16(right+((fr*dfb)>>7));
         e->delay_pos++;
-        if(dmode!=VG1_DELAY_WIDEN)left+=(oldl*dmix)>>7;
-        right+=(oldr*dmix)>>7;
+        if(p->vg_delay.on) {
+            if(dmode==VG1_DELAY_WIDEN) {
+                /* Original WIDEN: LEFT remains direct, RIGHT is delayed.
+                   Mix crossfades from direct right to shifted right. */
+                right=(right*(127-dmix)+oldr*dmix)>>7;
+            } else {
+                left+=(oldl*dmix)>>7;
+                right+=(oldr*dmix)>>7;
+            }
+        }
 
         /* Room model: four comb paths, stereo mix, damp, size and width.
            Input AFTER delay, as described in the Vanguard 1.6 manual. */
@@ -589,10 +598,18 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         int32_t rwidth=p->vg_reverb.on?p->vg_reverb.width:127;
         int32_t rmix=p->vg_reverb.on?p->vg_reverb.mix:0;
         int32_t rev_in=(left+right)>>2;
+        uint32_t pre=e->reverb_prepos&8191u;
+        uint32_t predelay_frames=(uint32_t)p->vg_reverb.predelay*44u;
+        if(predelay_frames>8191u)predelay_frames=8191u;
+        int32_t predelayed=predelay_frames?
+            e->reverb_predelay[(pre-predelay_frames)&8191u]:rev_in;
+        e->reverb_predelay[pre]=(int16_t)v1_sat16(rev_in);
+        e->reverb_prepos++;
+        rev_in=predelayed;
         int32_t wetl=0,wetr=0;
         uint32_t rp=e->reverb_pos&2047u;
         for(j=0;j<4;j++) {
-            uint32_t tap=taps[j]+(uint32_t)room/2u;
+            uint32_t tap=taps[j]+((uint32_t)room*4u);
             uint32_t index=(rp+2048u-tap)&2047u;
             int32_t value=e->reverb_mem[j][index];
             e->reverb_lp[j]+=(value-e->reverb_lp[j])*(127-rdamp)/127;
