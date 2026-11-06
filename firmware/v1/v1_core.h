@@ -185,9 +185,22 @@ static inline int32_t v1_triangle_sample(uint32_t ph) {
     uint32_t t = ph >> 16;
     return (int32_t)(t < 32768 ? (t<<1) : ((65535u-t)<<1)) - 32768;
 }
+/* Piecewise semitone ratios implement full +/-48 semitone envelope-2 pitch
+   range; the previous linear cents approximation clipped to one octave. */
 static inline uint32_t v1_detune_inc(uint32_t inc, int32_t cents) {
-    int32_t k = v1_clip(65536 + cents*38, 4096, 131072);
-    return (uint32_t)(((uint64_t)inc*(uint32_t)k)>>16);
+    static const uint32_t ratio[12]={
+        65536u,69433u,73561u,77936u,82570u,87481u,
+        92682u,98193u,104032u,110219u,116771u,123715u
+    };
+    int32_t semis=cents/100, frac=cents-semis*100, oct=semis/12;
+    int32_t step=semis-oct*12;
+    uint64_t tmp;
+    if(step<0) {step+=12;oct--;}
+    tmp=((uint64_t)inc*ratio[step])>>16;
+    if(oct>0)tmp<<=(oct>7?7:oct);
+    if(oct<0)tmp>>=(-oct>7?7:-oct);
+    tmp=(tmp*(uint32_t)v1_clip(65536+frac*38,32768,131072))>>16;
+    return (uint32_t)(tmp>0x60000000u?0x60000000u:tmp);
 }
 static inline uint32_t v1_note_inc(int32_t note, int32_t cents) {
     uint32_t inc = v1_pitch_inc[v1_clip(note,0,127)];
@@ -331,6 +344,19 @@ static void v1_note_off(v1_engine_t *e,uint8_t note) {
             v1_env_release(&e->voices[i].f,&e->patch.filter_env);
         }
 }
+/* The 2006 plugin's ARP modes: up/down/alter/ordered/random, with a
+ * separate ON switch. Keep an internal OFF value for MIDI event handling. */
+static uint32_t v1_arp_mode(const v1_patch_t *p) {
+    if(!p->vg_arp.on) return p->arp_mode;
+    switch(p->vg_arp.mode) {
+        case VG1_ARP_UP: return V1_ARP_UP;
+        case VG1_ARP_DOWN: return V1_ARP_DOWN;
+        case VG1_ARP_ALTER: return V1_ARP_UPDOWN;
+        case VG1_ARP_ORDERED: return V1_ARP_PLAYED;
+        case VG1_ARP_RANDOM: return V1_ARP_RANDOM;
+        default:return V1_ARP_UP;
+    }
+}
 static void v1_panic(v1_engine_t *e) {
     uint32_t i;
     for(i=0;i<V1_VOICES;i++) {e->voices[i].active=0;e->voices[i].gate=0;}
@@ -341,28 +367,29 @@ static void v1_hold(v1_engine_t *e,uint8_t on,uint8_t note,uint8_t vel) {
     if(on) {
         for(i=0;i<e->held_count;i++) if(e->held[i]==note) return;
         if(e->held_count<16) {e->held[e->held_count]=note;e->held_velocity[e->held_count++]=vel;}
-        if(e->patch.arp_mode==V1_ARP_OFF)v1_note_on(e,note,vel);
+        if(v1_arp_mode(&e->patch)==V1_ARP_OFF)v1_note_on(e,note,vel);
     } else {
         for(i=0;i<e->held_count;i++) if(e->held[i]==note) {
             uint32_t j;
             for(j=i+1;j<e->held_count;j++){e->held[j-1]=e->held[j];e->held_velocity[j-1]=e->held_velocity[j];}
             e->held_count--;break;
         }
-        if(e->patch.arp_mode==V1_ARP_OFF)v1_note_off(e,note);
+        if(v1_arp_mode(&e->patch)==V1_ARP_OFF)v1_note_off(e,note);
         else if(!e->held_count && e->arp_active) {
             v1_note_off(e,e->arp_note);e->arp_active=0;
         }
     }
 }
 static void v1_arp_tick(v1_engine_t *e) {
-    uint32_t i,j,idx,oct,mode=e->patch.arp_mode,count=e->held_count;
+    uint32_t i,j,idx,oct,mode=v1_arp_mode(&e->patch),count=e->held_count;
     if(mode==V1_ARP_OFF || !count)return;
     if(e->arp_active){v1_note_off(e,e->arp_note);e->arp_active=0;}
     uint8_t sort[16],vel[16];
     for(i=0;i<count;i++){sort[i]=e->held[i];vel[i]=e->held_velocity[i];}
     if(mode!=V1_ARP_PLAYED)
         for(i=1;i<count;i++){uint8_t sn=sort[i],sv=vel[i];j=i;while(j && sort[j-1]>sn){sort[j]=sort[j-1];vel[j]=vel[j-1];j--;}sort[j]=sn;vel[j]=sv;}
-    uint32_t n=count*(e->patch.arp_octaves?e->patch.arp_octaves:1u);
+    uint32_t octave_count=e->patch.vg_arp.on?e->patch.vg_arp.octaves:e->patch.arp_octaves;
+    uint32_t n=count*(octave_count?octave_count:1u);
     if(mode==V1_ARP_DOWN) idx=n-1u-(e->arp_pos%n);
     else if(mode==V1_ARP_RANDOM) idx=v1_rand(&e->rng)%n;
     else if(mode==V1_ARP_UPDOWN) {uint32_t span=n>1?2u*n-2u:1u;idx=e->arp_pos%span;if(idx>=n)idx=span-idx;}
@@ -387,9 +414,10 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
     if(!gate_frames)gate_frames=1;
     for(f=0;f<n;f++) {
         int32_t dry=0, left,right;
-        if(p->arp_mode!=V1_ARP_OFF){
+        if(v1_arp_mode(p)!=V1_ARP_OFF){
             if(e->arp_phase==0 && e->held_count)v1_arp_tick(e);
-            if(e->arp_active && e->arp_phase > (step_frames*(uint32_t)(p->arp_gate+1u))/128u) {
+            uint32_t gate_len=p->vg_arp.on?p->vg_arp.gate:p->arp_gate;
+            if(e->arp_active && e->arp_phase > (step_frames*(uint32_t)(gate_len+1u))/128u) {
                 v1_note_off(e,e->arp_note);e->arp_active=0;
             }
             e->arp_phase++;
@@ -408,8 +436,8 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         e->gate_smooth_right+=(target_r-e->gate_smooth_right)/(int32_t)slew;
         /* Three independent LFOs. Calculations are integer and bounded. */
         for(j=0;j<3;j++) {
-            uint32_t rate=p->vg_lfo[j].speed?p->vg_lfo[j].speed:p->lfo_rate[j];
-            uint32_t inc=(uint32_t)rate*67652u; /* 0..60 Hz as per Vanguard */
+            uint32_t rate=p->vg_lfo[j].speed?p->vg_lfo[j].speed:((uint32_t)p->lfo_rate[j]*60u/127u);
+            uint32_t inc=rate*97392u; /* 0..60 Hz at 44.1kHz */
             e->lfo_ph[j]+=inc;
             e->lfo[j]=v1_tri_lfo(e->lfo_ph[j]);
         }
@@ -434,7 +462,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             amp=v1_env_sample(&v->a,&p->amp);
             fe=v1_env_sample(&v->f,&p->filter_env);
             if(!amp && !v->gate){v->active=0;continue;}
-            uint32_t vcs=p->vg_osc.fat?p->vg_osc.vcs:1u;
+            uint32_t vcs=p->vg_osc.fat?(p->vg_osc.vcs?p->vg_osc.vcs:2u):1u;
             if(vcs<1u)vcs=1u;
             if(vcs>10u)vcs=10u;
             for(j=0;j<3;j++) {
@@ -475,9 +503,6 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         dry=v1_clip(dry,-65535,65535);
         /* Gate is applied to stereo after per-voice synthesis, not copied into
            each oscillator. ReFX 1.6 permits independent L/R gate patterns. */
-        if(on) {
-            /* Keep dry in place; L/R gain is applied immediately after split. */
-        }
         /* Effects deliberately post-gate: echoed/reverberant tails survive gates. */
         int32_t ci=e->chorus_pos&1023u;
         uint32_t mod=(uint32_t)(e->lfo[2]+32768);
