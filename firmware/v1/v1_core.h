@@ -198,9 +198,16 @@ static inline int32_t vg1_stack_gain_q15(const v1_patch_t *p) {
     uint32_t total=0;
     for(uint32_t k=0;k<3;k++)
         if(p->osc[k].wave!=VG1_W_OFF)total+=p->osc[k].level;
-    uint32_t limit=p->vg_amp.drive?140u:255u;
-    if(total<=limit)return 32767;
-    return (int32_t)((limit*32767u)/total);
+    uint32_t limit=255u;
+    if(p->vg_amp.drive) {
+        limit=140u;
+        /* High-Q / high-drive patches need enough resonant-filter
+           headroom to avoid hitting the drive knee ceiling altogether. */
+        if(p->vg_amp.drive>=64u)limit=105u;
+        if(p->resonance>=70u)limit=64u;
+    }
+    if(total<=limit)return 32768; /* true unity: Q8=256 */
+    return (int32_t)((limit*32768u)/total);
 }
 
 /* BLEP correction for one discontinuity, computed in fixed point.
@@ -566,7 +573,15 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
     if(e->runtime_fat_limit && fixed_vcs>e->runtime_fat_limit)
         fixed_vcs=e->runtime_fat_limit;
     e->last_render_vcs=(uint8_t)fixed_vcs;
-    const int32_t poly_gain_target=vg1_poly_bus_target(sounding_voices);
+    int32_t poly_gain_target=vg1_poly_bus_target(sounding_voices);
+    /* A driven patch has harmonics with higher inter-voice peaks than
+       Gated Motion. Reserve extra gain before FX for dense driven chords,
+       while preserving the original exact one-note drive/voicing. */
+    if(sounding_voices>=3u && p->vg_amp.drive) {
+        uint32_t pct=92u-((uint32_t)p->vg_amp.drive>>1);
+        if(pct<48u)pct=48u;
+        poly_gain_target=(poly_gain_target*(int32_t)pct)/100;
+    }
     const int32_t stack_gain_q8=vg1_stack_gain_q15(p)>>7;
     /* Only dual-path modes need the second coefficient / second division. */
     const uint32_t dual_filter=p->filter_type==VG1_F_X ||
