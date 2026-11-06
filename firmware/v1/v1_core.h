@@ -66,7 +66,7 @@ typedef struct {
     v1_svf_state_t f1, f2;
     v1_env_state_t a, f;
     uint32_t age;
-    int32_t fa1,fa2,fa3,fk; /* filter coefficients, updated at control rate */
+    int32_t fa1,fa2,fa3,fk,fb1,fb2,fb3,bk,pole6; /* control-rate coefficients and 6dB pole */
     uint8_t note, velocity, gate, active;
 } v1_voice_t;
 
@@ -271,6 +271,7 @@ static inline int32_t v1_svf(v1_svf_state_t *s,const v1_svf_coef_t *c,int32_t x,
         default: return lo;
     }
 }
+#include "vg1_filter_dsp.h"
 static inline uint32_t v1_quarter(const v1_engine_t *e, uint32_t bpm) {
     (void)e; if (bpm<40)bpm=40; if(bpm>240)bpm=240;
     return 60u*V1_SR/bpm;
@@ -296,11 +297,11 @@ static void v1_note_on(v1_engine_t *e,uint8_t note,uint8_t vel) {
     if(max<1u)max=1u;
     for(i=0;i<max;i++) {
         if(!e->voices[i].active) {choice=i;break;}
-        if(e->voices[i].a.level<(int32_t)oldest) {oldest=(uint32_t)e->voices[i].a.level;choice=i;}
+        if((uint32_t)e->voices[i].a.level<oldest) {oldest=(uint32_t)e->voices[i].a.level;choice=i;}
     }
     v1_voice_t *v=&e->voices[choice];
     v->active=1;v->gate=1;v->note=note;v->velocity=vel?vel:1;
-    v->age=++e->note_age;v->f1.ic1=v->f1.ic2=v->f2.ic1=v->f2.ic2=0;
+    v->age=++e->note_age;v->f1.ic1=v->f1.ic2=v->f2.ic1=v->f2.ic2=v->pole6=0;
     v1_env_attack(&v->a);v1_env_attack(&v->f);
     if(e->patch.vg_osc.retrig) {
         for(i=0;i<3;i++) if(e->patch.vg_lfo[i].retrig)e->lfo_ph[i]=0;
@@ -453,14 +454,18 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             for(j=0;j<3;j++)cut+=((int32_t)p->vg_lfo[j].cutoff*e->lfo[j])>>15;
             cut+=((int32_t)p->lfo_filter*e->lfo[1]>>16);
             cut=v1_clip(cut,0,127);
-            v1_svf_coef_t c;
+            v1_svf_coef_t c,c2;
             if((e->frames&31u)==0u) {
                 int32_t res=v1_clip((int32_t)p->resonance+(((int32_t)p->vg_env2.resonance*fe)>>15),0,127);
                 c=v1_filter_coeff(cut,res);
+                c2=v1_filter_coeff(v1_clip(cut+10,0,127),res);
                 v->fa1=c.a1;v->fa2=c.a2;v->fa3=c.a3;v->fk=c.k;
-            } else {c.a1=v->fa1;c.a2=v->fa2;c.a3=v->fa3;c.k=v->fk;}
-            s=v1_svf(&v->f1,&c,s,p->filter_type);
-            if(p->filter_type>=V1_LP24)s=v1_svf(&v->f2,&c,s,p->filter_type);
+                v->fb1=c2.a1;v->fb2=c2.a2;v->fb3=c2.a3;v->bk=c2.k;
+            } else {
+                c.a1=v->fa1;c.a2=v->fa2;c.a3=v->fa3;c.k=v->fk;
+                c2.a1=v->fb1;c2.a2=v->fb2;c2.a3=v->fb3;c2.k=v->bk;
+            }
+            s=vg1_filter_render(v,&c,&c2,s,p->filter_type);
             amp=(amp*(int32_t)v->velocity)>>7;
             if(p->vg_env1.level)amp=v1_clip((amp*(int32_t)(127+p->vg_env1.level))>>7,0,32767);
             if(p->lfo_amp)amp=(amp*(32767-((p->lfo_amp*(e->lfo[2]+32768))>>8)))>>15;
