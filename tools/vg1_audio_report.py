@@ -134,7 +134,15 @@ def report(folder: Path, references: Path|None):
     for e in sorted(clipped,key=lambda v:v["clip_samples"],reverse=True)[:6]:
         print(f"  {e['file']} ({e['clip_samples']} clipped samples)")
     presets = [e for e in entries if e["group"]=="presets"]
+    oscillators = [e for e in entries if e["group"]=="oscillators"]
     duplicates=[]
+    # The original Vanguard menu offers 31 DISTINCT waveform choices.
+    # Regressions which accidentally dispatch several menu items to one
+    # identical DSP model must fail CI, even when all are non-silent.
+    for i,a in enumerate(oscillators):
+        for b in oscillators[i+1:]:
+            if a["sha256_pcm"]==b["sha256_pcm"]:
+                duplicates.append((a["file"],b["file"]))
     for i,a in enumerate(presets):
         for b in presets[i+1:]:
             if a["sha256_pcm"]==b["sha256_pcm"]:
@@ -168,9 +176,9 @@ def report(folder: Path, references: Path|None):
         if not comparisons:
             print("No matching WAV names; references must mirror the render subfolders.")
     if duplicates or silence or clipped:
-        if duplicates: print(f"Identical preset renders: {duplicates}")
-        raise RuntimeError("Audio QC failed: silence, digital clipping, or byte-identical factory programs")
-    print("PASS: all WAVs audible, zero clipped samples, and factory programs are distinct.")
+        if duplicates: print(f"Byte-identical waveform / preset renders: {duplicates}")
+        raise RuntimeError("Audio QC failed: silence, digital clipping, or byte-identical Vanguard oscillators/factory programs")
+    print("PASS: all 31 oscillators audible/distinct, eight presets distinct, zero clipped samples.")
     print("NOTE: Tests do not claim bit-accurate reFX matching. Use --references for real A/B metrics.")
 
 
