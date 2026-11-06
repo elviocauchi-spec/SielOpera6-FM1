@@ -48,7 +48,7 @@ static inline int32_t vg1_wave_eval(v1_osc_state_t *o,uint32_t phase,
         case VG1_W_BI_PULSE:
             return (vg1_pulse(phase,step,0x40000000u)+vg1_pulse(phase,step,pw))/2;
         case VG1_W_FM_PULSE:
-            ph2=phase+(uint32_t)(((int64_t)v1_sine_sample(phase)*((int32_t)(pw>>24)-64))<<9);
+            ph2=phase+(uint32_t)(((int64_t)v1_sine_sample(phase)*((int32_t)(pw>>24)-64))*512);
             return vg1_pulse(ph2,step,0x80000000u);
         case VG1_W_PWM_SAW:
             return (saw+v1_saw_sample(phase+pw,step))/2;
@@ -72,7 +72,7 @@ static inline int32_t vg1_wave_eval(v1_osc_state_t *o,uint32_t phase,
             return (a*(127-b)+vg1_pulse(phase,step,0x05555555u)*b)/127;
         case VG1_W_SINE_FM:
             sine=v1_sine_sample(phase);
-            return v1_sine_sample(phase+(uint32_t)((int64_t)sine*((int32_t)(pw>>25))<<7));
+            return v1_sine_sample(phase+(uint32_t)((int64_t)sine*((int32_t)(pw>>25))*128));
         case VG1_W_SINE_AM:
             sine=v1_sine_sample(phase);
             return (sine*(32767-((int32_t)(pw>>25)*v1_sine_sample(phase*2u)>>7)))>>15;
