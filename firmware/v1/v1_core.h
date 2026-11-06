@@ -689,7 +689,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
     uint32_t lfo_inc[3],vi;
     const int32_t gate_alpha=vg1_gate_contour_alpha(p->vg_gate.contour);
     const uint32_t arp_enabled=v1_arp_mode(p)!=V1_ARP_OFF;
-    uint32_t sounding_voices=0u;
+    uint32_t sounding_voices=0u,already_audible=0u;
     /* The engine reserves 16 slots for custom VOICES settings, but default
        Vanguard programs enable only eight. Avoid testing the unused upper
        eight slots 44100 times/sec. Keep a slot active until its release
@@ -699,6 +699,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
     if(render_slots>V1_VOICES)render_slots=V1_VOICES;
     for(vi=0;vi<V1_VOICES;vi++) {
         if(e->voices[vi].active) {
+            if(e->voices[vi].a.level>512)already_audible=1u;
             if(vi>=render_slots)render_slots=vi+1u;
             if(e->voices[vi].gate || e->voices[vi].a.level>256)
                 sounding_voices++;
@@ -742,6 +743,15 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         if(sounding_voices>=8u && p->master>85u)
             poly_gain_target=(poly_gain_target*3)/4;
     }
+    /* A whole new chord starts with all envelopes at zero. Apply its
+       voice-count headroom BEFORE the first attack sample. Otherwise
+       the 1ms gain slew starts at unity and the first 30–60 samples
+       can slam into the final output guard even though the final mix
+       gain is perfectly safe once settled. This is a silent pre-ramp,
+       not an abrupt gain change to an already audible chord.
+       Progressively added notes still use the smooth gain envelope. */
+    if(!already_audible && sounding_voices>=2u)
+        e->poly_gain_q15=poly_gain_target;
     const int32_t stack_gain_q8=vg1_stack_gain_q15(p)>>7;
     /* Only dual-path modes need the second coefficient / second division. */
     const uint32_t dual_filter=p->filter_type==VG1_F_X ||
