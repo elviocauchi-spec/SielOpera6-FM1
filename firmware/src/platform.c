@@ -416,6 +416,12 @@ static void app_main(void);
 void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) */
 {
     uint8_t p;
+#ifdef PLATFORM_AUDIO_ISR_LOAD
+    /* Optional app hook measures the WHOLE DMA-half interrupt, including
+       audio render, USB tap, master gain, buffer writes and IRQ overhead.
+       Ordinary Opera/Siel firmware is unchanged when hook is absent. */
+    uint32_t full_isr_begin=fm1_ticks();
+#endif
     in_audio = 1;
     p = fm1_audio_pending();
     fm1_audio_ack_aux(p);
@@ -435,6 +441,9 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
         for (i = 0; i < HALF_WORDS; i++)
             o[i] <<= 7;
         fm1_audio_ack_half();
+#ifdef PLATFORM_AUDIO_ISR_LOAD
+        PLATFORM_AUDIO_ISR_LOAD((uint32_t)(fm1_ticks()-full_isr_begin),HALF_FRAMES);
+#endif
     }
     in_audio = 0;
 }
