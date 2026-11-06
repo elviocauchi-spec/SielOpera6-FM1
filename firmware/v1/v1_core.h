@@ -651,7 +651,13 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             case VG1_DELAY_WIDEN: fl=0;fr=oldr;break;
             default:fl=oldr;fr=oldl;break;
         }
-        int32_t dwl=left+((fl*dfb)>>7), dwr=right+((fr*dfb)>>7);
+        /* The 16-bit delay line needs internal headroom when FAT, stereo
+           Trancegate and feedback coincide. Store at half scale and restore
+           the 2x wet gain only on output. This is NOT clipping/limiting,
+           and keeps the echo/feedback response unchanged at normal levels.
+           Bypassed delays retain the old dry capture behavior. */
+        int32_t dwl=(p->vg_delay.on?(left>>1):left)+((fl*dfb)>>7);
+        int32_t dwr=(p->vg_delay.on?(right>>1):right)+((fr*dfb)>>7);
 #ifdef VG1_AUDIO_DIAGNOSTICS
         if(dwl>32767||dwl<-32767||dwr>32767||dwr<-32767)
             e->diag_delay_over++;
@@ -663,10 +669,10 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             if(dmode==VG1_DELAY_WIDEN) {
                 /* Original WIDEN: LEFT remains direct, RIGHT is delayed.
                    Mix crossfades from direct right to shifted right. */
-                right=(right*(127-dmix)+oldr*dmix)>>7;
+                right=(right*(127-dmix)+(oldr*2)*dmix)>>7;
             } else {
-                left+=(oldl*dmix)>>7;
-                right+=(oldr*dmix)>>7;
+                left+=(oldl*dmix)>>6;
+                right+=(oldr*dmix)>>6;
             }
         }
 
