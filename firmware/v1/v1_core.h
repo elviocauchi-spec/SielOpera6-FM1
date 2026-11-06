@@ -54,7 +54,12 @@ typedef struct {
 } v1_patch_t;
 
 typedef struct { uint32_t ph[V1_SUPER], inc[V1_SUPER], base_inc[V1_SUPER]; uint32_t rng; int32_t noise_prev; } v1_osc_state_t;
-typedef struct { int32_t ic1, ic2; } v1_svf_state_t;
+typedef struct {
+    int32_t ic1, ic2;
+#ifdef VG1_AUDIO_DIAGNOSTICS
+    uint32_t diag_state_clamps;
+#endif
+} v1_svf_state_t;
 typedef struct { uint8_t stage; int32_t level, release_step; } v1_env_state_t;
 typedef struct {
     v1_osc_state_t osc[3];
@@ -449,6 +454,11 @@ static inline int32_t v1_svf(v1_svf_state_t *s,const v1_svf_coef_t *c,int32_t x,
     int32_t lo,hi,bp;
     s->ic1=v1*2-s->ic1;
     s->ic2=v2*2-s->ic2;
+#ifdef VG1_AUDIO_DIAGNOSTICS
+    if(s->ic1>110000||s->ic1< -110000||
+       s->ic2>110000||s->ic2< -110000)
+        s->diag_state_clamps++;
+#endif
     s->ic1=v1_clip(s->ic1,-110000,110000);
     s->ic2=v1_clip(s->ic2,-110000,110000);
     lo=v2; bp=v1; hi=x-((c->k*v1)>>12)-v2;
