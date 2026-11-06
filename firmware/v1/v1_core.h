@@ -679,7 +679,11 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         right=(right*master_gain)>>7;
         out[f*2u]+=v1_sat16(left);
         out[f*2u+1u]+=v1_sat16(right);
-        if((uint32_t)(left<0?-left:left)>e->render_peak)e->render_peak=(uint32_t)(left<0?-left:left);
+        /* Keep the unsaturated peak for post-build headroom assessment. */
+        uint32_t peakl=(uint32_t)(left<0?-left:left);
+        uint32_t peakr=(uint32_t)(right<0?-right:right);
+        if(peakl>e->render_peak)e->render_peak=peakl;
+        if(peakr>e->render_peak)e->render_peak=peakr;
         e->frames++;
     }
 }
