@@ -111,6 +111,8 @@ static void app_audio(int32_t *out,uint32_t n) {
         v1.patch=V1_FACTORY[got_program];
         v1.gate_phase=v1.gate_step=v1.arp_phase=v1.arp_pos=0;
         v1.gate_smooth=v1.gate_smooth_right=32767;
+        v1.gate_out_left=v1.gate_out_right=32767;
+        v1.runtime_fat_limit=0; /* new program restores its configured FAT */
     }
     while(qr!=qw) {
         v1_note_msg_t m=msgs[qr&(V1_Q-1u)];
@@ -122,6 +124,18 @@ static void app_audio(int32_t *out,uint32_t n) {
         uint32_t usec=(fm1_ticks()-t0)/FM1_TICKS_PER_US;
         uint32_t deadline=(n*1000000u)/V1_SR;
         v1_dsp_pct=deadline ? (usec*100u)/deadline : 0;
+        /* AC79 safety governor: never repeat a measured high-load block
+           at the same FAT setting. It only drops one VCS layer at a time
+           and never suppresses a held key. The conservative polyphonic
+           baseline normally avoids needing this last-resort measure. */
+        if(v1_dsp_pct>78u && v1.last_render_vcs>1u)
+            v1.runtime_fat_limit=v1.last_render_vcs-1u;
+        if(!v1.held_count) {
+            uint32_t i,active=0;
+            for(i=0;i<V1_VOICES;i++)
+                active|=v1.voices[i].active;
+            if(!active)v1.runtime_fat_limit=0;
+        }
     }
 }
 static void app_idle(void) { platform_poll(); }
@@ -378,6 +392,9 @@ static void v1_panel_draw(void) {
     cv_text(143,37,&FONT_S,"HELD",warm);
     v1_num(tmp,v1.held_count);cv_text(207,37,&FONT_S,tmp,high);
     cv_text(10,61,&FONT_S,p->vg_gate.enabled?"TRANCEGATE ON":"TRANCEGATE OFF",RGB(161,180,205));
+    cv_text(160,61,&FONT_S,"FAT",warm);
+    v1_num(tmp,v1.last_render_vcs);
+    cv_text(209,61,&FONT_S,tmp,high);
     cv_text(10,85,&FONT_S,"BPM",warm);
     v1_num(bpmtext,bpm);cv_text(52,85,&FONT_S,bpmtext,RGB(230,235,246));
     cv_text(133,85,&FONT_S,"DSP",high);
