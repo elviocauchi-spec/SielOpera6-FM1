@@ -75,16 +75,20 @@ static int write_wav(const char *path,const v1_patch_t *patch,uint32_t frames,
     if(fwrite(hdr,1,44,f)!=44){fclose(f);return -1;}
     v1_engine_init(&engine,patch);
     place_note(note,106,1);
-    if(chord){place_note((uint8_t)(note+4u),100,1);place_note((uint8_t)(note+7u),98,1);}
-    if(chord==2)place_note((uint8_t)(note+12u),100,1);
+    /* 1: triad, 2: 4-note, 3: 5-note, 4: 8-note held voicing. */
+    static const uint8_t offsets[7]={4,7,12,14,16,17,19};
+    static const uint8_t vel[7]={100,98,100,100,100,98,100};
+    uint32_t extra=chord==4?7u:chord==3?4u:chord==2?3u:chord?2u:0u;
+    for(uint32_t k=0;k<extra;k++)
+        place_note((uint8_t)(note+offsets[k]),vel[k],1);
     while(written<frames) {
         uint32_t n=frames-written;
         if(n>BLOCK)n=BLOCK;
         if(written<hold_frames && written+n>hold_frames)n=hold_frames-written;
         if(written==hold_frames) {
             place_note(note,0,0);
-            if(chord){place_note((uint8_t)(note+4u),0,0);place_note((uint8_t)(note+7u),0,0);}
-            if(chord==2)place_note((uint8_t)(note+12u),0,0);
+            for(uint32_t k=0;k<extra;k++)
+                place_note((uint8_t)(note+offsets[k]),0,0);
         }
         memset(pcm,0,sizeof pcm);
         v1_engine_render(&engine,pcm,n,128u);
@@ -191,6 +195,10 @@ static int render_gated_diagnostics(const char *base) {
     p=V1_FACTORY[3];
     snprintf(path,sizeof(path),"%s/10_C4_E4_G4_C5_FOUR_NOTES.wav",folder);
     if(write_wav(path,&p,PRESET_SECONDS*V1_SR,60u,2u*V1_SR,2))return -1;
+    snprintf(path,sizeof(path),"%s/11_FIVE_NOTES_NO_OVERDRIVE.wav",folder);
+    if(write_wav(path,&p,PRESET_SECONDS*V1_SR,60u,2u*V1_SR,3))return -1;
+    snprintf(path,sizeof(path),"%s/12_EIGHT_NOTES_NO_OVERDRIVE.wav",folder);
+    if(write_wav(path,&p,PRESET_SECONDS*V1_SR,60u,2u*V1_SR,4))return -1;
 #undef RENDER_VARIANT
     return 0;
 }
