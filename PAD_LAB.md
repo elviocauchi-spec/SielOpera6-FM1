@@ -1,4 +1,4 @@
-# OPERA PAD LAB — live chord-following pad synthesizer
+# OPERA PAD LAB — direct held-note arpeggiator and ten-pad synth bank
 
 Development branch `feature/pad-lab-chord-follow`. **Experimental source, not an FM-1 firmware release.** This branch leaves the existing OPERA firmware on `main` intact.
 
@@ -9,6 +9,9 @@ Development branch `feature/pad-lab-chord-follow`. **Experimental source, not an
 - Releasing a key immediately releases B's active copy of that pitch. Releasing **all** keys disarms B, cancels pending B hits and fades the sound naturally through the envelope/effects.
 - B runs only while PLAY transport is running and B ARP is ON. Press PLAY to stop the transport.
 - **PRESETS keeps the backing running while browsing sounds on A.** Previously PRESETS exited the demo, which was why B disappeared on other presets. Browsing sounds in the preview does not save them or overwrite your existing song/program choice.
+- **Ten contrasting PAD LAB sounds now occupy program numbers 71–80:** CELESTIAL (bright ensemble), NIGHTTIDE (dark sub-octave drone), AURORA (glassy band-pass), MIST FLOW (soft flowing texture), SILK STR (PWM strings), EMBERWAVE (brassy sweep), GLASS SEA (high-pass air), DEEP FIELD (sub/bass texture), VOWEL PAD (choir-like band-pass), ORBIT PWM (wide animated pulses). These are different oscillator/filter/envelope programs, not merely different display names.
+- The PRESETS wheel skips the unsaved, identical **INIT** slots 81–99 (and the original factory INIT at #32); it still includes any slot where the user actually saved a program.
+- **Important:** while PAD LAB audition is active, positions 71–80 use the new factory sounds *regardless of older user saves* in those positions, to ensure the intended preview. Leaving the preview restores normal saved-program priority; no stored patch is erased.
 - The preview's B LEVEL changes ONLY the B mixer gain. It never applies a full mix reset, never changes A's gain/pan/sends and never writes the demo B setting into saved-song globals. Default B LEVEL is 112.
 - The original stored patterns, mixer and patch programs remain available outside the demo. The old chord-classifier module and its tests were removed; **the audio and keyboard paths contain no chord recognition at all**.
 
@@ -24,6 +27,8 @@ Development branch `feature/pad-lab-chord-follow`. **Experimental source, not an
 ```sh
 cc -std=c11 -O2 -Wall -Wextra -Werror tests/pad_keys_test.c -o /tmp/pad_keys_test
 /tmp/pad_keys_test
+cc -std=c11 -O2 -Wall -Wextra -Werror tests/pad_presets_test.c -o /tmp/pad_presets_test
+/tmp/pad_presets_test
 python3 tests/pad_lab_audition_test.py
 # Target build is still ./build.sh with the AC79 SDK and JieLi compiler.
 ```
