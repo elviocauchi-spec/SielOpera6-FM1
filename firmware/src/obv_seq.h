@@ -326,7 +326,7 @@ static void seq_tick(void)
             r->dur = r->step & 1u ? base - sw : base + sw;   /* swing: the first of each pair longer */
             if (r->dur < CTL) r->dur = CTL;
             s = pad_seq_step(t, r->step);
-            seq_auto(t, r->step);
+            if (!pad_demo_active) seq_auto(t, r->step); /* saved automation must not alter preview sounds */
             TRACE('T', t, r->step * 1000000u + (s->note[0] ? (uint32_t)s->note[0] * 1000u : 0u) + (s->note[1] ? 900u : 0u) + (s->gate >= GATE_TIE ? 1u : 0u));
             r->play = s->note[0] && !(s->ratch & STEP_OFF) && (s->chance >= 100u || xorshift(&rnd_state) % 100u < s->chance);
             r->wait = NO_WAIT;
