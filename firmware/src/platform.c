@@ -428,8 +428,10 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
     if (p & FM1_AUDIO_HALF) {
         int32_t *o = &abuf[fm1_audio_free_half() * HALF_WORDS];
         uint32_t i, b;
+#ifndef PLATFORM_AUDIO_RENDER_OVERWRITES
         for (i = 0; i < HALF_WORDS; i++)
             o[i] = 0;
+#endif
         UAC_ONLY(uac_render_start());
         app_audio(o, HALF_FRAMES);
         for (i = 0; i < HALF_WORDS; i++) {
