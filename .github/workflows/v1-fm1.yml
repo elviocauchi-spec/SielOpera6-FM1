@@ -9,6 +9,8 @@ on:
     paths:
       - 'firmware/v1/**'
       - 'tests/v1_core_smoke.c'
+      - 'tests/vg1_render.c'
+      - 'tools/vg1_audio_report.py'
       - 'tools/build.py'
       - '.github/workflows/v1-fm1.yml'
 
@@ -20,8 +22,30 @@ jobs:
       - uses: actions/checkout@v4
       - name: Compile new DSP engine independently of firmware
         run: gcc -std=c11 -O2 -Wall -Wextra -o /tmp/v1_smoke tests/v1_core_smoke.c
-      - name: Test voice lifecycle, supersaw, 16-step gate, and arpeggiator
+      - name: Validate Vanguard 1 waveforms, filters, FAT stereo, amp, trancegate, arp and glide
         run: /tmp/v1_smoke
+
+  audio-reference:
+    needs: host
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Compile exact firmware core and preset bank for desktop WAV playback
+        run: gcc -std=c11 -O2 -Wall -Wextra -o /tmp/vg1_render tests/vg1_render.c
+      - name: Render eight presets and 31 oscillator modes at 44.1kHz stereo
+        run: /tmp/vg1_render build/vg1-audio
+      - name: Audit silence, clipping, stereo, spectral signatures and preset identity
+        run: python3 tools/vg1_audio_report.py build/vg1-audio
+      - name: Publish listenable VG-1 oscillator and preset audio
+        uses: actions/upload-artifact@v4
+        with:
+          name: VG1-Vanguard1-Audio-Reference
+          path: build/vg1-audio/
+          if-no-files-found: error
 
   firmware:
     needs: host
