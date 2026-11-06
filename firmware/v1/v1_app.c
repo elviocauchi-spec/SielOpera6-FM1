@@ -12,11 +12,13 @@ static void app_idle(void);
 #define V1_BPM_MIN 40u
 #define V1_BPM_MAX 240u
 #include "vg1_factory.h"
+#include "vg1_key_router.h"
 
 static v1_engine_t v1 __attribute__((section(".pool")));
 static volatile uint32_t req_program;
 static volatile uint32_t vg1_panic_requested;
-static uint32_t got_program, page, octave, bpm=128, panel_last, keys_last;
+static uint32_t got_program, page, octave, bpm=128, panel_last;
+static vg1_key_router_t v1_keyboard;
 static volatile uint32_t v1_dsp_pct; /* time in our DSP relative to the 256-frame audio deadline */
 /* User-facing pages follow the original Vanguard 1.6 section names.
  * The small FM1 screen navigates the same controls with four encoders.
@@ -413,14 +415,18 @@ static void app_main(void) {
     for(;;) {
         platform_poll();
         v1_midi();
-        uint32_t down=fm1_in.notes & ~keys_last;
-        uint32_t up=keys_last & ~fm1_in.notes;
-        for(k=0;k<27;k++) {
-            uint32_t note=v1_bound((int32_t)V1_KEY0+(int32_t)k+((int32_t)octave-2)*12,127);
-            if(down&(1u<<k)){v1_queue(1,note,102);midi_send(0x90u,note,102);}
-            if(up&(1u<<k)){v1_queue(0,note,0);midi_send(0x80u,note,0);}
+        /* Octave changes apply ONLY to new key-down events. Note-offs must
+           match their stored original pitches, including the USB-MIDI out. */
+        vg1_key_event_t note_events[VG1_KEY_COUNT];
+        uint32_t count=vg1_route_keys(&v1_keyboard,fm1_in.notes,octave,note_events);
+        for(k=0;k<count;k++) {
+            uint32_t note=note_events[k].note;
+            if(note_events[k].on) {
+                v1_queue(1,note,102);midi_send(0x90u,note,102);
+            } else {
+                v1_queue(0,note,0);midi_send(0x80u,note,0);
+            }
         }
-        keys_last=fm1_in.notes;
         buttons=fm1_input_edges(&rel);
         if(buttons&(1u<<BTN_OCT_DOWN)){if(octave)octave--;}
         if(buttons&(1u<<BTN_OCT_UP)){if(octave<4u)octave++;}
