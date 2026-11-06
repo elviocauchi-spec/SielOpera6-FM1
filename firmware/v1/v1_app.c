@@ -122,6 +122,7 @@ static const v1_patch_t V1_FACTORY[V1_PRESETS] = {
 
 static v1_engine_t v1 __attribute__((section(".pool")));
 static volatile uint32_t req_program;
+static volatile uint32_t vg1_panic_requested;
 static uint32_t got_program, page, octave, bpm=128, panel_last, keys_last;
 static volatile uint32_t v1_dsp_pct; /* time in our DSP relative to the 256-frame audio deadline */
 /* User-facing pages follow the original Vanguard 1.6 section names.
@@ -198,6 +199,11 @@ static void v1_queue(uint32_t on,uint32_t note,uint32_t vel) {
 }
 static void app_audio(int32_t *out,uint32_t n) {
     uint32_t t0=fm1_ticks();
+    if(vg1_panic_requested) {
+        vg1_panic_requested=0;
+        v1_panic(&v1);
+        qr=qw; /* emergency all-sound-off: discard stale queued note-ons */
+    }
     if(req_program!=got_program) {
         got_program=req_program%V1_PRESETS;
         v1_panic(&v1);
@@ -475,8 +481,23 @@ static void v1_midi(void) {
         else if(kind==0xc0u)req_program=d1%V1_PRESETS;
         else if(kind==0xe0u)v1.bend14=(int32_t)(((uint32_t)d2<<7)|d1)-8192;
         else if(kind==0xd0u)v1.aftertouch=d1;
-        else if(kind==0xb0u && (d1==120u||d1==123u)) {
-            uint32_t k;for(k=0;k<128;k++)v1_queue(0,k,0);
+        else if(kind==0xb0u){
+            /* CC assignments taken from Vanguard 1 manual appendix B.
+               Volume and expression are independent of patch AMP LEVEL. */
+            switch(d1) {
+                case 1:  v1.modwheel=d2; break;                    /* filter cutoff addition */
+                case 7:  v1.midi_volume=d2; break;
+                case 8:  v1.patch.vg_amp.spread=d2; break;
+                case 10: v1.patch.vg_amp.pan=d2; break;
+                case 11: v1.midi_expression=d2; break;
+                case 21: v1.patch.vg_gate.contour=d2; break;
+                case 22: v1.patch.vib_speed=d2; break;
+                case 23: v1.patch.vib_depth=d2; break;
+                case 71: v1.patch.resonance=d2; break;
+                case 74: v1.patch.cutoff=d2; break;
+                case 120: case 123: vg1_panic_requested=1; break;
+                default: break;
+            }
         }
     }
 }
