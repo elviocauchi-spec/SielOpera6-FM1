@@ -3,8 +3,11 @@
  * The platform provides ONLY board startup, audio, physical I/O and firmware recovery.
  */
 #define APP_NAME "VG-1 FM1"
+#include <stdint.h>
 static void app_idle(void);
+static void vg1_audio_isr_load(uint32_t elapsed_ticks,uint32_t frames);
 #define LCD_IDLE() app_idle()
+#define PLATFORM_AUDIO_ISR_LOAD(ticks,frames) vg1_audio_isr_load((ticks),(frames))
 #include "../src/platform.c"
 #include "v1_core.h"
 
@@ -19,7 +22,7 @@ static volatile uint32_t req_program;
 static volatile uint32_t vg1_panic_requested;
 static uint32_t got_program, page, octave, bpm=128, panel_last;
 static vg1_key_router_t v1_keyboard;
-static volatile uint32_t v1_dsp_pct; /* time in our DSP relative to the 256-frame audio deadline */
+static volatile uint32_t v1_dsp_pct; /* WHOLE ALNK ISR percentage, not only synth render */
 /* User-facing pages follow the original Vanguard 1.6 section names.
  * The small FM1 screen navigates the same controls with four encoders.
  * The oscillator/filter menus display their documented entries verbatim. */
@@ -98,8 +101,26 @@ static void v1_queue(uint32_t on,uint32_t note,uint32_t vel) {
     __asm__ volatile("" ::: "memory");
     qw=i+1;
 }
+/* The original 'DSP' meter stopped timing at the end of app_audio().
+   The hardware then still had to process USB audio, physical master
+   volume, copies, I2S conversion and IRQ acknowledgment. That hidden
+   overhead can cause underruns while the screen misleadingly says 80%.
+   The dedicated platform hook now measures ALL this work and adapts FAT
+   using the TRUE audio deadline load, with 28% safety margin. */
+static void vg1_audio_isr_load(uint32_t elapsed_ticks,uint32_t frames) {
+    uint32_t usec=elapsed_ticks/FM1_TICKS_PER_US;
+    uint32_t deadline=(frames*1000000u)/V1_SR;
+    uint32_t pct=deadline?(usec*100u)/deadline:0u;
+    v1_dsp_pct=pct;
+    if(pct>72u && v1.last_render_vcs>1u)
+        v1.runtime_fat_limit=v1.last_render_vcs-1u;
+    if(!v1.held_count) {
+        uint32_t i,active=0;
+        for(i=0;i<V1_VOICES;i++)active|=v1.voices[i].active;
+        if(!active)v1.runtime_fat_limit=0;
+    }
+}
 static void app_audio(int32_t *out,uint32_t n) {
-    uint32_t t0=fm1_ticks();
     if(vg1_panic_requested) {
         vg1_panic_requested=0;
         v1_panic(&v1);
@@ -121,23 +142,6 @@ static void app_audio(int32_t *out,uint32_t n) {
         v1_hold(&v1,m.on,m.note,m.vel);
     }
     v1_engine_render(&v1,out,n,bpm);
-    {
-        uint32_t usec=(fm1_ticks()-t0)/FM1_TICKS_PER_US;
-        uint32_t deadline=(n*1000000u)/V1_SR;
-        v1_dsp_pct=deadline ? (usec*100u)/deadline : 0;
-        /* AC79 safety governor: never repeat a measured high-load block
-           at the same FAT setting. It only drops one VCS layer at a time
-           and never suppresses a held key. The conservative polyphonic
-           baseline normally avoids needing this last-resort measure. */
-        if(v1_dsp_pct>78u && v1.last_render_vcs>1u)
-            v1.runtime_fat_limit=v1.last_render_vcs-1u;
-        if(!v1.held_count) {
-            uint32_t i,active=0;
-            for(i=0;i<V1_VOICES;i++)
-                active|=v1.voices[i].active;
-            if(!active)v1.runtime_fat_limit=0;
-        }
-    }
 }
 static void app_idle(void) { platform_poll(); }
 static uint32_t v1_bound(int32_t v,int32_t max) {
