@@ -13,6 +13,7 @@
 #include <string.h>
 #include <errno.h>
 #include <sys/stat.h>
+#define VG1_AUDIO_DIAGNOSTICS 1
 #include "../firmware/v1/vg1_factory.h"
 
 #define BLOCK 256u
@@ -99,7 +100,10 @@ static int write_wav(const char *path,const v1_patch_t *patch,uint32_t frames,
     fclose(f);
     total_output_frames+=frames;
     total_output_wavs++;
-    printf("rendered %-40s frames=%u peak_preclip=%u\n",path,frames,engine.render_peak);
+    printf("rendered %-40s frames=%u peak_preclip=%u osc_over=%u pre_drive=%u drive_clip=%u delay_clip=%u reverb_clip=%u final_clip=%u voice_frames=%u\n",
+           path,frames,engine.render_peak,engine.diag_osc_over,engine.diag_pre_drive_over,
+           engine.diag_drive_over,engine.diag_delay_over,engine.diag_reverb_over,
+           engine.diag_final_over,engine.diag_frames_active);
     return 0;
 }
 static v1_patch_t diagnostic_patch(uint32_t type) {
