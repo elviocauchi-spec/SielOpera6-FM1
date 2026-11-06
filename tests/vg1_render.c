@@ -128,7 +128,7 @@ static v1_patch_t diagnostic_patch(uint32_t type) {
     p.vg_arp.on=0;p.vg_glide.on=0;p.vg_gate.enabled=0;
     p.vg_delay.on=0;p.vg_reverb.on=0;
     p.bend_range=0;p.vib_depth=0;
-    p.master=112;p.voice_limit=1;
+    p.master=85;p.voice_limit=1; /* fixed diagnostic headroom: peak PWM waveform must not clip */
     return p;
 }
 static int render_all(const char *base) {
