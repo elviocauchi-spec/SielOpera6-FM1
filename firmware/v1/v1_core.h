@@ -51,6 +51,7 @@ typedef struct {
     vg1_arpeggiator_patch_t vg_arp;
     vg1_glide_patch_t vg_glide;
     uint8_t bend_range,vib_speed,vib_depth;
+    uint8_t source_bank; /* 0=VG1-authored, 1=imported ProSounds approximate */
 } v1_patch_t;
 
 typedef struct { uint32_t ph[V1_SUPER], inc[V1_SUPER], base_inc[V1_SUPER]; uint32_t rng; int32_t noise_prev; } v1_osc_state_t;
@@ -223,8 +224,18 @@ static inline int32_t vg1_stack_gain_q15(const v1_patch_t *p) {
     for(uint32_t k=0;k<3;k++)
         if(p->osc[k].wave!=VG1_W_OFF)total+=p->osc[k].level;
     uint32_t limit=255u;
+    if(p->source_bank) {
+        /* ProSounds VST index map remains provisional. Its reconstructed
+           oscillator levels must never drive the 50k integrator input
+           into hard clipping. Bright/stacked waveform selections require
+           a stricter source budget, unlike VG1's calibrated 8 originals. */
+        limit=210u;
+        for(uint32_t i=0;i<3;i++)
+            if(p->osc[i].wave>=VG1_W_AJX_SAW && p->osc[i].level>16u)
+                limit=110u;
+    }
     if(p->vg_amp.drive) {
-        limit=140u;
+        if(limit>140u)limit=140u;
         /* High-Q / high-drive patches need enough resonant-filter
            headroom to avoid hitting the drive knee ceiling altogether. */
         if(p->vg_amp.drive>=64u)limit=72u;
