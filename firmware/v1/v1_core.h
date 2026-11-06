@@ -318,6 +318,22 @@ static inline int32_t vg1_gate_smooth(int32_t current,int32_t target,int32_t alp
     int32_t y=current+step;
     return v1_clip(y,0,32767);
 }
+/* The AC79 has a fixed 256-frame audio interrupt deadline. A dense chord
+   must NOT multiply FAT/VCS work without limit. Budget up to ten oscillator
+   layers across sounding voices (never below one per voice). This retains
+   stereo FAT at four held notes instead of dropping the fourth note and
+   forcing CPU past 100%. The budget is deliberately conservative until
+   measured on the actual FM1. User's VCS setting remains the quality ceiling. */
+static inline uint32_t vg1_fat_render_count(const v1_patch_t *p,
+                                             uint32_t voice_count) {
+    uint32_t configured=p->vg_osc.fat?(p->vg_osc.vcs?p->vg_osc.vcs:2u):1u;
+    if(!voice_count)voice_count=1;
+    if(configured>V1_SUPER)configured=V1_SUPER;
+    if(configured<1u)configured=1u;
+    uint32_t max_layers=10u/voice_count;
+    if(max_layers<1u)max_layers=1u;
+    return configured<max_layers?configured:max_layers;
+}
 static inline uint32_t v1_quarter(const v1_engine_t *e, uint32_t bpm) {
     (void)e; if (bpm<40)bpm=40; if(bpm>240)bpm=240;
     return 60u*V1_SR/bpm;
@@ -491,8 +507,12 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
     uint32_t lfo_inc[3],vi;
     const int32_t gate_alpha=vg1_gate_contour_alpha(p->vg_gate.contour);
     const uint32_t arp_enabled=v1_arp_mode(p)!=V1_ARP_OFF;
-    const uint32_t fixed_vcs=p->vg_osc.fat?
-        v1_clip(p->vg_osc.vcs?p->vg_osc.vcs:2u,1,10):1u;
+    uint32_t sounding_voices=0u;
+    for(vi=0;vi<V1_VOICES;vi++)
+        if(e->voices[vi].active && (e->voices[vi].gate ||
+            e->voices[vi].a.level>256))
+            sounding_voices++;
+    const uint32_t fixed_vcs=vg1_fat_render_count(p,sounding_voices);
     /* Only dual-path modes need the second coefficient / second division. */
     const uint32_t dual_filter=p->filter_type==VG1_F_X ||
         p->filter_type==VG1_F_FORMANT || p->filter_type==VG1_F_M;
