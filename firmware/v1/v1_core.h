@@ -99,6 +99,11 @@ typedef struct {
        Displayed FAT/VCS parameter is unchanged; the hardware may render
        fewer layers when needed to meet the hard audio deadline. */
     uint8_t runtime_fat_limit, last_render_vcs;
+    /* Emergency post-FAT quality tier: keep stereo reverb with 2 early
+       combs when 4+ notes still threaten the audio interrupt at FAT=1.
+       Only the device's measured full ISR load can request this state. */
+    uint8_t runtime_reverb_economy;
+    int32_t reverb_late_gain_q15;
 #ifdef VG1_AUDIO_DIAGNOSTICS
     /* Desktop-only counters; no extra work or memory in FM1 firmware. */
     uint32_t diag_pre_drive_over,diag_drive_over,diag_osc_over;
@@ -520,6 +525,7 @@ static void v1_engine_init(v1_engine_t *e,const v1_patch_t *p) {
     e->gate_smooth=e->gate_smooth_right=32767;
     e->gate_out_left=e->gate_out_right=32767;
     e->poly_gain_q15=32767;
+    e->reverb_late_gain_q15=32767;
 }
 static void v1_note_on(v1_engine_t *e,uint8_t note,uint8_t vel) {
     uint32_t i,j,choice=0,oldest=0xffffffffu,legato=0;
@@ -1017,6 +1023,21 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         /* Room model: four comb paths, stereo mix, damp, size and width.
            Input AFTER delay, as described in the Vanguard 1.6 manual. */
         if(reverb_on) {
+        /* When a dense chord already runs FAT=1, measured AC79 overload
+           can request economical 2-comb reverb rather than dropping
+           musical voices. Fade the two late combs down over 32 audio
+           samples (about 0.7ms) BEFORE skipping their feedback work;
+           normal rendering retains the exact original four-comb tone. */
+        int32_t late_target=e->runtime_reverb_economy?0:32767;
+        if(e->reverb_late_gain_q15>late_target) {
+            e->reverb_late_gain_q15-=1024;
+            if(e->reverb_late_gain_q15<late_target)
+                e->reverb_late_gain_q15=late_target;
+        } else if(e->reverb_late_gain_q15<late_target) {
+            e->reverb_late_gain_q15+=512;
+            if(e->reverb_late_gain_q15>late_target)
+                e->reverb_late_gain_q15=late_target;
+        }
         int32_t rev_in=(left+right)>>2;
         uint32_t pre=e->reverb_prepos&8191u;
         int32_t predelayed=predelay_frames?
@@ -1031,9 +1052,19 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         uint32_t rp=e->reverb_pos&2047u;
         for(j=0;j<4;j++) {
             uint32_t index=(rp+2048u-reverb_taps[j])&2047u;
+            if(j>=2u && e->reverb_late_gain_q15==0) {
+                /* Keep the late paths free of stale feedback while
+                   skipping their expensive filter/division stages. */
+                e->reverb_mem[j][index]=0;
+                e->reverb_mem[j][rp]=0;
+                e->reverb_lp[j]=0;
+                continue;
+            }
             int32_t value=e->reverb_mem[j][index];
             e->reverb_lp[j]+=(value-e->reverb_lp[j])*reverb_damp_gain/127;
             int32_t fb=e->reverb_lp[j];
+            if(j>=2u)
+                fb=(fb*e->reverb_late_gain_q15)>>15;
             if(j&1u) wetr+=fb; else wetl+=fb;
             int32_t rw=(rev_in>>1)+((fb*96)>>7);
 #ifdef VG1_AUDIO_DIAGNOSTICS
@@ -1048,6 +1079,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         left+=(wetl*reverb_mix)>>9;
         right+=(wetr*reverb_mix)>>9;
         } else {
+            e->reverb_late_gain_q15=32767;
             /* No inactive reverb feedback and no phantom reverb clipping.
                Zero each position as the ring rotates; skip all 4 comb
                filtering and per-sample divisions while reverb is OFF. */
