@@ -8,53 +8,53 @@
  */
 #ifndef VG1_FILTER_DSP_H
 #define VG1_FILTER_DSP_H
-static inline int32_t vg1_filter_render(v1_voice_t *v,
+static inline int32_t vg1_filter_render(v1_svf_state_t *f1,v1_svf_state_t *f2,int32_t *pole6,
                    const v1_svf_coef_t *c,const v1_svf_coef_t *c2,
                    int32_t sample,uint8_t filter_type) {
-    int32_t a,b,lo,hi,bp,alpha;
+    int32_t a,b,lo,bp,alpha;
     switch(filter_type) {
         case VG1_F_LOW6: case VG1_F_HIGH6:
             /* A proper one-pole section for first-order 6 dB/oct. */
             alpha=v1_clip(c->a2,0,4096);
-            v->pole6+=((sample-v->pole6)*alpha)>>12;
-            return filter_type==VG1_F_LOW6 ? v->pole6 : sample-v->pole6;
-        case VG1_F_LOW12: return v1_svf(&v->f1,c,sample,V1_LP12);
+            (*pole6)+=((sample-(*pole6))*alpha)>>12;
+            return filter_type==VG1_F_LOW6 ? (*pole6) : sample-(*pole6);
+        case VG1_F_LOW12: return v1_svf(f1,c,sample,V1_LP12);
         case VG1_F_LOW24:
-            a=v1_svf(&v->f1,c,sample,V1_LP12);
-            return v1_svf(&v->f2,c,a,V1_LP12);
+            a=v1_svf(f1,c,sample,V1_LP12);
+            return v1_svf(f2,c,a,V1_LP12);
         case VG1_F_HIGH24:
-            a=v1_svf(&v->f1,c,sample,V1_HP24);
-            return v1_svf(&v->f2,c,a,V1_HP24);
+            a=v1_svf(f1,c,sample,V1_HP24);
+            return v1_svf(f2,c,a,V1_HP24);
         case VG1_F_X:
-            a=v1_svf(&v->f1,c,sample,V1_BP12);
-            b=v1_svf(&v->f2,c2,sample,V1_BP12);
+            a=v1_svf(f1,c,sample,V1_BP12);
+            b=v1_svf(f2,c2,sample,V1_BP12);
             return a-b;
         case VG1_F_BAND24:
-            a=v1_svf(&v->f1,c,sample,V1_BP12);
-            return v1_svf(&v->f2,c,a,V1_BP12);
+            a=v1_svf(f1,c,sample,V1_BP12);
+            return v1_svf(f2,c,a,V1_BP12);
         case VG1_F_FORMANT:
-            a=v1_svf(&v->f1,c,sample,V1_BP12);
-            b=v1_svf(&v->f2,c2,sample,V1_BP12);
+            a=v1_svf(f1,c,sample,V1_BP12);
+            b=v1_svf(f2,c2,sample,V1_BP12);
             return (a+b)/2;
         case VG1_F_NOTCH:
-            return v1_svf(&v->f1,c,sample,V1_NOTCH);
+            return v1_svf(f1,c,sample,V1_NOTCH);
         case VG1_F_NOTCH_LOW:
-            bp=v1_svf(&v->f1,c,sample,V1_BP12);
-            lo=v1_svf(&v->f2,c,sample,V1_LP12);
+            bp=v1_svf(f1,c,sample,V1_BP12);
+            lo=v1_svf(f2,c,sample,V1_LP12);
             return lo-bp/2;
         case VG1_F_M:
-            a=v1_svf(&v->f1,c,sample,V1_BP12);
-            b=v1_svf(&v->f2,c2,sample,V1_BP12);
+            a=v1_svf(f1,c,sample,V1_BP12);
+            b=v1_svf(f2,c2,sample,V1_BP12);
             return a+b;
         case VG1_F_BAND_SHP1:
-            a=v1_svf(&v->f1,c,sample,V1_BP12);
+            a=v1_svf(f1,c,sample,V1_BP12);
             if(a>12000)return 12000+(a-12000)/4;
             if(a< -12000)return -12000+(a+12000)/4;
             return a;
         case VG1_F_BAND_SHP2:
-            a=v1_svf(&v->f1,c,sample,V1_BP12);
+            a=v1_svf(f1,c,sample,V1_BP12);
             return v1_clip(a*3,-25000,25000);
-        default: return v1_svf(&v->f1,c,sample,V1_LP12);
+        default: return v1_svf(f1,c,sample,V1_LP12);
     }
 }
 #endif
