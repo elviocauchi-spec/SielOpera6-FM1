@@ -76,6 +76,7 @@ static int write_wav(const char *path,const v1_patch_t *patch,uint32_t frames,
     v1_engine_init(&engine,patch);
     place_note(note,106,1);
     if(chord){place_note((uint8_t)(note+4u),100,1);place_note((uint8_t)(note+7u),98,1);}
+    if(chord==2)place_note((uint8_t)(note+12u),100,1);
     while(written<frames) {
         uint32_t n=frames-written;
         if(n>BLOCK)n=BLOCK;
@@ -83,6 +84,7 @@ static int write_wav(const char *path,const v1_patch_t *patch,uint32_t frames,
         if(written==hold_frames) {
             place_note(note,0,0);
             if(chord){place_note((uint8_t)(note+4u),0,0);place_note((uint8_t)(note+7u),0,0);}
+            if(chord==2)place_note((uint8_t)(note+12u),0,0);
         }
         memset(pcm,0,sizeof pcm);
         v1_engine_render(&engine,pcm,n,128u);
@@ -184,6 +186,11 @@ static int render_gated_diagnostics(const char *base) {
     p=V1_FACTORY[3]; p.osc[1].level=62;p.vg_amp.drive=4;
     p.cutoff=68;p.resonance=23;
     RENDER_VARIANT("09_PREVIOUS_BRIGHT_TONE");
+    /* Four-note CPU stress reference for comparing emulator audio to the
+       SAME current DSP on desktop: C4 E4 G4 C5 at 128 BPM. */
+    p=V1_FACTORY[3];
+    snprintf(path,sizeof(path),"%s/10_C4_E4_G4_C5_FOUR_NOTES.wav",folder);
+    if(write_wav(path,&p,PRESET_SECONDS*V1_SR,60u,2u*V1_SR,2))return -1;
 #undef RENDER_VARIANT
     return 0;
 }
