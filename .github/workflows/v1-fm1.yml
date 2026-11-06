@@ -11,6 +11,7 @@ on:
       - 'tests/v1_core_smoke.c'
       - 'tests/vg1_render.c'
       - 'tests/vg1_gate_smoke.c'
+      - 'tests/vg1_release_smoke.c'
       - 'tools/vg1_audio_report.py'
       - 'tools/build.py'
       - '.github/workflows/v1-fm1.yml'
@@ -29,6 +30,10 @@ jobs:
         run: |
           gcc -std=c11 -O2 -Wall -Wextra -o /tmp/vg1_gate_smoke tests/vg1_gate_smoke.c
           /tmp/vg1_gate_smoke
+      - name: Test physical octave-shift note-off and Gated Motion voice/FX tail termination
+        run: |
+          gcc -std=c11 -O2 -Wall -Wextra -o /tmp/vg1_release_smoke tests/vg1_release_smoke.c
+          /tmp/vg1_release_smoke
 
   audio-reference:
     needs: host
