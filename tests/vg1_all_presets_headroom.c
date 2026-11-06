@@ -30,7 +30,7 @@ int main(void) {
     static const uint32_t chords[8]={1,2,3,4,5,6,7,8};
     static const uint8_t velocities[2]={100,127};
     uint32_t cases=0;
-    for(uint32_t preset=0;preset<V1_PRESETS;preset++) {
+    for(uint32_t preset=0;preset<VG1_AUTHORED_PRESETS;preset++) {
         for(uint32_t vi=0;vi<2;vi++) {
             uint8_t velocity=velocities[vi];
             for(uint32_t k=0;k<8;k++) {
@@ -59,7 +59,7 @@ int main(void) {
         }
     }
     uint32_t progressive=0;
-    for(uint32_t preset=0;preset<V1_PRESETS;preset++) {
+    for(uint32_t preset=0;preset<VG1_AUTHORED_PRESETS;preset++) {
         for(uint32_t vi=0;vi<2;vi++) {
             uint8_t note=(preset==1||preset==4)?43:(preset==2||preset==7)?72:60;
             v1_engine_init(&e,&V1_FACTORY[preset]);
