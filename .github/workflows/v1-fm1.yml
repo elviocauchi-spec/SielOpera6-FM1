@@ -17,6 +17,8 @@ on:
       - 'tests/vg1_gain_matrix.c'
       - 'tests/vg1_cpu_bench.c'
       - 'tests/vg1_fx_economy_smoke.c'
+      - 'tests/vg1_prosounds_smoke.c'
+      - 'firmware/v1/vg1_prosounds_generated.inc'
       - 'tools/vg1_audio_report.py'
       - 'tools/vg1_compare_audio.py'
       - 'tools/vg1_fxb_inspect.py'
@@ -53,6 +55,10 @@ jobs:
         run: |
           gcc -std=c11 -O2 -Wall -Wextra -o /tmp/vg1_all_presets_headroom tests/vg1_all_presets_headroom.c
           /tmp/vg1_all_presets_headroom
+      - name: Validate imported ProSounds 128-slot bank and audio quality
+        run: |
+          gcc -std=c11 -O2 -Wall -Wextra -o /tmp/vg1_prosounds_smoke tests/vg1_prosounds_smoke.c
+          /tmp/vg1_prosounds_smoke
       - name: Diagnose extreme notes, resonance, MIDI modulation and internal gain stages
         run: |
           gcc -std=c11 -O2 -Wall -Wextra -o /tmp/vg1_gain_matrix tests/vg1_gain_matrix.c
