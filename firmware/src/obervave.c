@@ -191,7 +191,7 @@ static uint32_t level_of(uint32_t vel) { return vel <= 50u ? 0u : vel <= 85u ? 1
 static uint32_t seq_pages(uint32_t t) { return pat.trk[t].len ? (pat.trk[t].len + 15u) / 16u : 1u; }
 static uint8_t cc_map[128];                     /* MIDI CC -> parameter + 1, 0 = none */
 
-static void prog_get(uint32_t n, patch_t *p)    /* program n: the user's, else the factory's (65-70: VIBE's, 71-99: INIT) */
+static void prog_get(uint32_t n, patch_t *p)    /* user saves first; else 1-64 factory, 65-70 VIBE, 71-80 PAD LAB, 81-99 INIT */
 {
     n %= NPROG;
     if (psect[n / PS_N].used[n % PS_N]) *p = psect[n / PS_N].p[n % PS_N];
