@@ -92,6 +92,10 @@ typedef struct {
     int16_t reverb_predelay[8192]; /* 0..127ms at 44.1 kHz */
     uint32_t reverb_prepos,reverb_pos;
     uint32_t render_peak;
+    /* Emergency runtime limit set by measured FM1 ISR load, 0=normal.
+       Displayed FAT/VCS parameter is unchanged; the hardware may render
+       fewer layers when needed to meet the hard audio deadline. */
+    uint8_t runtime_fat_limit, last_render_vcs;
 #ifdef VG1_AUDIO_DIAGNOSTICS
     /* Desktop-only counters; no extra work or memory in FM1 firmware. */
     uint32_t diag_pre_drive_over,diag_drive_over,diag_osc_over;
@@ -512,7 +516,10 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         if(e->voices[vi].active && (e->voices[vi].gate ||
             e->voices[vi].a.level>256))
             sounding_voices++;
-    const uint32_t fixed_vcs=vg1_fat_render_count(p,sounding_voices);
+    uint32_t fixed_vcs=vg1_fat_render_count(p,sounding_voices);
+    if(e->runtime_fat_limit && fixed_vcs>e->runtime_fat_limit)
+        fixed_vcs=e->runtime_fat_limit;
+    e->last_render_vcs=(uint8_t)fixed_vcs;
     /* Only dual-path modes need the second coefficient / second division. */
     const uint32_t dual_filter=p->filter_type==VG1_F_X ||
         p->filter_type==VG1_F_FORMANT || p->filter_type==VG1_F_M;
