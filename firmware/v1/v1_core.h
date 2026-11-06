@@ -7,13 +7,25 @@
 #ifndef V1_CORE_H
 #define V1_CORE_H
 #include <stdint.h>
+#include "vg1_reference.h"
 #define V1_SR 44100u
 #define V1_VOICES 16u /* capacity, not hard-coded active polyphony */
 #define V1_OSCS 3u
-#define V1_SUPER 5u
-
-enum { V1_OFF, V1_SAW, V1_PULSE, V1_TRI, V1_SINE, V1_SUPERSAW, V1_NOISE };
-enum { V1_LP12, V1_HP12, V1_BP12, V1_NOTCH, V1_LP24, V1_HP24, V1_BP24 };
+#define V1_SUPER 10u /* Vanguard FAT/VCS accepts 2..10 layered oscillators */
+#define V1_OFF VG1_W_OFF
+#define V1_SAW VG1_W_SAWTOOTH
+#define V1_PULSE VG1_W_PULSE_PWM
+#define V1_TRI VG1_W_TRI_SAW_MORPH
+#define V1_SINE VG1_W_SINE
+#define V1_SUPERSAW VG1_W_AJX_SAW3 /* transitional name for old prototype tests */
+#define V1_NOISE VG1_W_WHITE_NOISE
+#define V1_LP12 VG1_F_LOW12
+#define V1_HP12 VG1_F_HIGH6
+#define V1_BP12 VG1_F_X
+#define V1_NOTCH VG1_F_NOTCH
+#define V1_LP24 VG1_F_LOW24
+#define V1_HP24 VG1_F_HIGH24
+#define V1_BP24 VG1_F_BAND24
 enum { V1_ARP_OFF, V1_ARP_UP, V1_ARP_DOWN, V1_ARP_UPDOWN, V1_ARP_RANDOM, V1_ARP_PLAYED };
 
 typedef struct { uint8_t wave, level, pw, detune; int8_t semi, fine; } v1_osc_patch_t;
@@ -30,10 +42,23 @@ typedef struct {
     uint16_t trance_mask; /* 16 genuinely editable steps; bit 0 is beat 1 */
     uint8_t trance_enabled, trance_rate, trance_depth;
     uint8_t master;
-    uint8_t voice_limit; /* 4..16; zero denotes conservative 8-voice default */
+    uint8_t voice_limit; /* zero denotes safe 8-voice initial setting */
+    /* Original reFX Vanguard 1.6 parameter architecture, distinct from
+       prototype controls above. New UI and DSP use these VG1 modules. */
+    vg1_osc_global_t vg_osc;
+    vg1_lfo_patch_t vg_lfo[3];
+    vg1_env1_mod_t vg_env1;
+    vg1_env2_mod_t vg_env2;
+    vg1_filter_tracking_t vg_keytrack;
+    vg1_amp_patch_t vg_amp;
+    vg1_trancegate_patch_t vg_gate;
+    vg1_delay_patch_t vg_delay;
+    vg1_reverb_patch_t vg_reverb;
+    vg1_arpeggiator_patch_t vg_arp;
+    vg1_glide_patch_t vg_glide;
 } v1_patch_t;
 
-typedef struct { uint32_t ph[5], inc[5], base_inc[5]; uint32_t rng; } v1_osc_state_t;
+typedef struct { uint32_t ph[V1_SUPER], inc[V1_SUPER], base_inc[V1_SUPER]; uint32_t rng; int32_t noise_prev; } v1_osc_state_t;
 typedef struct { int32_t ic1, ic2; } v1_svf_state_t;
 typedef struct { uint8_t stage; int32_t level, release_step; } v1_env_state_t;
 typedef struct {
@@ -53,7 +78,7 @@ typedef struct {
     int32_t lfo[3];
     uint16_t gate_step;
     uint32_t gate_phase;
-    int32_t gate_smooth;
+    int32_t gate_smooth,gate_smooth_right;
     uint8_t held[16], held_velocity[16], held_count, arp_pos;
     uint8_t arp_note, arp_active, arp_direction;
     uint32_t arp_phase;
@@ -168,29 +193,20 @@ static inline uint32_t v1_note_inc(int32_t note, int32_t cents) {
     uint32_t inc = v1_pitch_inc[v1_clip(note,0,127)];
     return v1_detune_inc(inc, cents);
 }
-static inline int32_t v1_osc_sample(v1_osc_state_t *o, const v1_osc_patch_t *p) {
-    uint32_t j, n = p->wave == V1_SUPERSAW ? V1_SUPER : 1u;
-    int32_t sum = 0;
-    if (!p->level || p->wave == V1_OFF) return 0;
-    if (p->wave == V1_NOISE)
-        return (int32_t)(v1_rand(&o->rng)>>16)-32768;
-    for (j=0;j<n;j++) {
-        uint32_t ph = o->ph[j] += o->inc[j], inc = o->inc[j];
-        int32_t x;
-        switch (p->wave) {
-            case V1_SAW: case V1_SUPERSAW: x = v1_saw_sample(ph,inc); break;
-            case V1_PULSE: {
-                uint32_t pw = ((uint32_t)(p->pw+8u)<<24);
-                x = v1_saw_sample(ph,inc) - v1_saw_sample(ph+pw,inc);
-                break;
-            }
-            case V1_TRI: x = v1_triangle_sample(ph); break;
-            case V1_SINE: x = v1_sine_sample(ph); break;
-            default: x=0; break;
-        }
-        sum += x;
+#include "vg1_wave_dsp.h"
+static inline int32_t v1_osc_sample(v1_osc_state_t *o, const v1_osc_patch_t *p,
+                                     uint32_t count,int32_t pwm_mod) {
+    uint32_t j;
+    int32_t sum=0;
+    uint32_t pw=vg1_pw(p->pw,pwm_mod);
+    if(!p->level || p->wave==VG1_W_OFF) return 0;
+    if(count<1) count=1;
+    if(count>V1_SUPER) count=V1_SUPER;
+    for(j=0;j<count;j++) {
+        uint32_t inc=o->inc[j], ph=(o->ph[j]+=inc);
+        sum+=vg1_wave_eval(o,ph,inc,pw,p->wave);
     }
-    return (sum / (int32_t)n) * (int32_t)p->level >> 7;
+    return (sum/(int32_t)count)*(int32_t)p->level>>7;
 }
 static inline uint32_t v1_duration(uint8_t knob) {
     /* 0 ~= 0.7ms; 127 ~= 2s. Exact knob curve is independent of Opera. */
@@ -271,7 +287,7 @@ static void v1_engine_init(v1_engine_t *e,const v1_patch_t *p) {
     for(i=0;i<sizeof(*e);i++) b[i]=0;
     e->patch=*p;
     e->rng=0x14f1ab27u;
-    e->gate_smooth=32767;
+    e->gate_smooth=e->gate_smooth_right=32767;
 }
 static void v1_note_on(v1_engine_t *e,uint8_t note,uint8_t vel) {
     uint32_t i,j,choice=0,oldest=0xffffffffu;
@@ -286,16 +302,22 @@ static void v1_note_on(v1_engine_t *e,uint8_t note,uint8_t vel) {
     v->active=1;v->gate=1;v->note=note;v->velocity=vel?vel:1;
     v->age=++e->note_age;v->f1.ic1=v->f1.ic2=v->f2.ic1=v->f2.ic2=0;
     v1_env_attack(&v->a);v1_env_attack(&v->f);
+    if(e->patch.vg_osc.retrig) {
+        for(i=0;i<3;i++) if(e->patch.vg_lfo[i].retrig)e->lfo_ph[i]=0;
+    }
     for(i=0;i<3;i++) {
         const v1_osc_patch_t *p=&e->patch.osc[i];
         v1_osc_state_t *o=&v->osc[i];
         uint32_t base = v1_note_inc(note+(int32_t)p->semi,p->fine);
         o->rng=v1_rand(&e->rng);
         for(j=0;j<V1_SUPER;j++) {
-            int32_t dist=(int32_t)j-2;
-            int32_t cents=dist*((int32_t)p->detune*40/127);
+            uint32_t vcs=e->patch.vg_osc.vcs?e->patch.vg_osc.vcs:2u;
+            int32_t centre=(int32_t)(vcs-1u);
+            int32_t det=(int32_t)e->patch.vg_osc.fat;
+            int32_t cents=((int32_t)j*2-centre)*det*24/127;
             o->base_inc[j]=o->inc[j]=v1_detune_inc(base,cents);
-            o->ph[j]=v1_rand(&e->rng);
+            if(e->patch.vg_osc.retrig) o->ph[j]=0;
+            else o->ph[j]=v1_rand(&e->rng);
         }
     }
 }
@@ -354,6 +376,9 @@ static void v1_arp_tick(v1_engine_t *e) {
 static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm) {
     uint32_t f,i,j,step_frames=v1_arp_step_frames(bpm,e->patch.arp_rate);
     uint32_t gate_frames=v1_arp_step_frames(bpm,e->patch.trance_rate);
+    const uint32_t quarter=v1_quarter(e,bpm);
+    if(e->patch.vg_arp.on) step_frames=vg1_rate_samples(quarter,e->patch.vg_arp.speed);
+    if(e->patch.vg_gate.enabled)gate_frames=vg1_rate_samples(quarter,e->patch.vg_gate.speed);
     uint32_t delay_frames=v1_quarter(e,bpm)*3u/4u;
     if(delay_frames>32767u) delay_frames=32767u;
     const v1_patch_t *p=&e->patch;
@@ -370,11 +395,20 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             if(e->arp_phase>=step_frames)e->arp_phase=0;
         }
         if(e->gate_phase++>=gate_frames){e->gate_phase=1;e->gate_step=(e->gate_step+1u)&15u;}
-        int32_t target=(!p->trance_enabled || (p->trance_mask&(1u<<e->gate_step)))?32767:0;
-        e->gate_smooth+=(target-e->gate_smooth)>>5;
+        uint32_t stereo=p->vg_gate.enabled&&p->vg_gate.stereo;
+        uint32_t on=p->vg_gate.enabled?p->vg_gate.enabled:p->trance_enabled;
+        uint16_t mask_l=p->vg_gate.enabled?p->vg_gate.left:p->trance_mask;
+        uint16_t mask_r=stereo?p->vg_gate.right:mask_l;
+        int32_t target=(!on || (mask_l&(1u<<e->gate_step)))?32767:0;
+        int32_t target_r=(!on || (mask_r&(1u<<e->gate_step)))?32767:0;
+        uint32_t contour=p->vg_gate.enabled?p->vg_gate.contour:64u;
+        uint32_t slew=2u+((127u-contour)>>2);
+        e->gate_smooth+=(target-e->gate_smooth)/(int32_t)slew;
+        e->gate_smooth_right+=(target_r-e->gate_smooth_right)/(int32_t)slew;
         /* Three independent LFOs. Calculations are integer and bounded. */
         for(j=0;j<3;j++) {
-            uint32_t inc=(uint32_t)(p->lfo_rate[j]+1u)*50000u; /* ~0.5 to 65 Hz */
+            uint32_t rate=p->vg_lfo[j].speed?p->vg_lfo[j].speed:p->lfo_rate[j];
+            uint32_t inc=(uint32_t)rate*67652u; /* 0..60 Hz as per Vanguard */
             e->lfo_ph[j]+=inc;
             e->lfo[j]=v1_tri_lfo(e->lfo_ph[j]);
         }
@@ -386,37 +420,59 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
              * every supersaw component. No oscillator's base pitch drifts. */
             if((e->frames&31u)==0u) {
                 uint32_t oi,si;
-                int32_t cents=((int32_t)p->lfo_pitch*e->lfo[0])>>16;
+                int32_t env_pitch=((int32_t)p->vg_env2.pitch*v->f.level)>>15;
                 for(oi=0;oi<3;oi++) {
-                    uint32_t count=p->osc[oi].wave==V1_SUPERSAW?5u:1u;
-                    for(si=0;si<count;si++)
+                    int32_t cents=((int32_t)p->vg_lfo[oi].detune*e->lfo[oi])>>15;
+                    cents+=(((int32_t)p->vg_env1.detune*v->a.level)>>15);
+                    cents+=env_pitch*100;
+                    if(!oi)cents+=((int32_t)p->lfo_pitch*e->lfo[0])>>16;
+                    for(si=0;si<V1_SUPER;si++)
                         v->osc[oi].inc[si]=v1_detune_inc(v->osc[oi].base_inc[si],cents);
                 }
             }
             amp=v1_env_sample(&v->a,&p->amp);
             fe=v1_env_sample(&v->f,&p->filter_env);
             if(!amp && !v->gate){v->active=0;continue;}
-            for(j=0;j<3;j++) s+=v1_osc_sample(&v->osc[j],&p->osc[j]);
+            uint32_t vcs=p->vg_osc.fat?p->vg_osc.vcs:1u;
+            if(vcs<1u)vcs=1u;
+            if(vcs>10u)vcs=10u;
+            for(j=0;j<3;j++) {
+                int32_t pwm=((int32_t)p->vg_lfo[j].pwm*e->lfo[j])>>15;
+                pwm+=((int32_t)p->vg_env1.pwm*amp)>>15;
+                pwm+=((int32_t)p->vg_env2.pwm*fe)>>15;
+                s+=v1_osc_sample(&v->osc[j],&p->osc[j],vcs,pwm);
+            }
             s=v1_clip(s,-50000,50000);
             if(p->drive)s=v1_sat16(s+((int32_t)p->drive*s>>7));
-            cut=(int32_t)p->cutoff + (((int32_t)p->filter_env_depth*fe)>>15)
-                + ((int32_t)p->lfo_filter*e->lfo[1]>>16);
+            cut=(int32_t)p->cutoff
+               + (((int32_t)p->vg_env1.cutoff*amp)>>15)
+               + (((int32_t)p->vg_env2.cutoff*fe)>>15)
+               + (((int32_t)p->filter_env_depth*fe)>>15)
+               + ((int32_t)p->vg_keytrack.keytrk*((int32_t)v->note-60))/64
+               + ((int32_t)p->vg_keytrack.veltrk*((int32_t)v->velocity-64))/64;
+            for(j=0;j<3;j++)cut+=((int32_t)p->vg_lfo[j].cutoff*e->lfo[j])>>15;
+            cut+=((int32_t)p->lfo_filter*e->lfo[1]>>16);
             cut=v1_clip(cut,0,127);
             v1_svf_coef_t c;
             if((e->frames&31u)==0u) {
-                c=v1_filter_coeff(cut,p->resonance);
+                int32_t res=v1_clip((int32_t)p->resonance+(((int32_t)p->vg_env2.resonance*fe)>>15),0,127);
+                c=v1_filter_coeff(cut,res);
                 v->fa1=c.a1;v->fa2=c.a2;v->fa3=c.a3;v->fk=c.k;
             } else {c.a1=v->fa1;c.a2=v->fa2;c.a3=v->fa3;c.k=v->fk;}
             s=v1_svf(&v->f1,&c,s,p->filter_type);
             if(p->filter_type>=V1_LP24)s=v1_svf(&v->f2,&c,s,p->filter_type);
             amp=(amp*(int32_t)v->velocity)>>7;
+            if(p->vg_env1.level)amp=v1_clip((amp*(int32_t)(127+p->vg_env1.level))>>7,0,32767);
             if(p->lfo_amp)amp=(amp*(32767-((p->lfo_amp*(e->lfo[2]+32768))>>8)))>>15;
             s=(s*amp)>>15;
             dry+=s;
         }
         dry=v1_clip(dry,-65535,65535);
-        if(p->trance_enabled)
-            dry=(dry*(32767-((int32_t)p->trance_depth*(32767-e->gate_smooth)/127)))>>15;
+        /* Gate is applied to stereo after per-voice synthesis, not copied into
+           each oscillator. ReFX 1.6 permits independent L/R gate patterns. */
+        if(on) {
+            /* Keep dry in place; L/R gain is applied immediately after split. */
+        }
         /* Effects deliberately post-gate: echoed/reverberant tails survive gates. */
         int32_t ci=e->chorus_pos&1023u;
         uint32_t mod=(uint32_t)(e->lfo[2]+32768);
@@ -426,8 +482,11 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         e->chorus_mem[0][ci]=(int16_t)v1_sat16(dry);
         e->chorus_mem[1][ci]=(int16_t)v1_sat16(dry);
         e->chorus_pos++;
-        left=dry+((chl*(int32_t)p->chorus)>>8);
-        right=dry+((chr*(int32_t)p->chorus)>>8);
+        int32_t mix=p->vg_gate.enabled?p->vg_gate.mix:p->trance_depth;
+        int32_t gl=on?(32767-((int32_t)mix*(32767-e->gate_smooth)/127)):32767;
+        int32_t gr=on?(32767-((int32_t)mix*(32767-e->gate_smooth_right)/127)):32767;
+        left=(dry*gl>>15)+((chl*(int32_t)p->chorus)>>8);
+        right=(dry*gr>>15)+((chr*(int32_t)p->chorus)>>8);
         uint32_t dl=e->delay_pos&32767u;
         int32_t oldl=e->delay_mem[0][(dl-delay_frames)&32767u];
         int32_t oldr=e->delay_mem[1][(dl-delay_frames)&32767u];
