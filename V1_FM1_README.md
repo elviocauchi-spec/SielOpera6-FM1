@@ -33,7 +33,7 @@ Source layout:
 | Component | Implemented now | Later |
 |---|---|---|
 | Oscillators | Three independent per note, saw/pulse/triangle/sine/noise/five-saw supersaw | Further digital/wavetable types, sync and ring modulation |
-| Polyphony | 8 voice slots, independent note envelopes | Hardware profiling; adaptive voice count and unison |
+| Polyphony | 16 allocated voice slots; 8 active by default; control allows 4–16 | Hardware profiling to determine a glitch-free active limit and adaptive unison |
 | Filters | LP12, HP12, BP12, notch, LP24, HP24, BP24 | More character modes; aim for 13 diverse choices |
 | Envelopes | Independent amp and filter ADSR | More envelope routing |
 | LFO | Three running LFOs, independent pitch/filter/amp destinations | Additional shapes, sync, fades |
@@ -70,11 +70,11 @@ hardware. Branch isolation does not create a physically separate flash slot.
 Before recommending installation:
 
 1. Measure audio ISR time at 44.1 kHz against its 256-frame deadline with
-   eight notes, three oscillators, active supersaw and effects. Target under
+   eight and sixteen notes, three oscillators, active supersaw and effects. Target under
    80% worst-case CPU allocation, leaving safety headroom.
 2. Monitor for lost MIDI events, clicks, clipped peaks, stuck notes, runaway
    filters, and gate/ARP discontinuities.
-3. Verify encoder assignments, octave/key mapping, screen refresh and USB/TRS
+3. Verify the on-screen DSP load gauge, encoder assignments, octave/key mapping, screen refresh and USB/TRS
    MIDI against a physical FM1.
 4. Validate recovery/update route and firmware rollback.
 5. Finish independent flash settings namespace, user-patch persistence,
