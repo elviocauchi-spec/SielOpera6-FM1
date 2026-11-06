@@ -19,6 +19,8 @@ on:
       - 'tests/vg1_fx_economy_smoke.c'
       - 'tools/vg1_audio_report.py'
       - 'tools/vg1_compare_audio.py'
+      - 'tools/vg1_fxb_inspect.py'
+      - 'tests/vg1_fxb_inspect_test.py'
       - 'tools/vg1_cpu_benchmark_report.py'
       - 'tools/build.py'
       - '.github/workflows/v1-fm1.yml'
@@ -33,6 +35,8 @@ jobs:
         run: gcc -std=c11 -O2 -Wall -Wextra -o /tmp/v1_smoke tests/v1_core_smoke.c
       - name: Validate Vanguard 1 waveforms, filters, FAT stereo, amp, trancegate, arp and glide
         run: /tmp/v1_smoke
+      - name: Validate original Vanguard FXB/FXP source extraction
+        run: python3 tests/vg1_fxb_inspect_test.py
       - name: Compile and run anti-click Trancegate contour tests
         run: |
           gcc -std=c11 -O2 -Wall -Wextra -o /tmp/vg1_gate_smoke tests/vg1_gate_smoke.c
