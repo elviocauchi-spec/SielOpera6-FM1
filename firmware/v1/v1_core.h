@@ -107,7 +107,7 @@ typedef struct {
     uint32_t diag_poly_mix_over,diag_poly_mix_16_over;
     uint32_t diag_pan_over,diag_predelay_over;
     uint32_t diag_post_gain_clamp,diag_drive_plateau;
-    uint32_t diag_osc_raw_over;
+    uint32_t diag_osc_raw_over,diag_final_hot,diag_output_guard;
 #endif
 } v1_engine_t;
 
@@ -188,6 +188,20 @@ static inline int32_t vg1_soft_drive(int32_t x) {
     if(a>=49152u)return x<0?-32767:32767;
     int32_t u=(int32_t)a-16384;
     int32_t y=16384+u-((u*u)>>16);
+    return x<0?-y:y;
+}
+/* Transparent peak-only output safety: unity below 28000, smoothly
+   bending into a ceiling of 32096, without ever hard-cutting PCM at
+   32767. The quadratic has continuous slope at both boundaries, and
+   uses one 32-bit multiply only for rare loud samples. This is a
+   LAST-RESORT safety guard; source/voice/effect headroom is managed
+   earlier to avoid baking distortion into the mix. */
+static inline int32_t vg1_output_softguard(int32_t x) {
+    uint32_t a=(uint32_t)(x<0?-(int64_t)x:x);
+    if(a<=28000u)return x;
+    if(a>=36192u)return x<0?-32096:32096;
+    int32_t u=(int32_t)a-28000;
+    int32_t y=28000+u-((u*u)>>14);
     return x<0?-y:y;
 }
 /* Normalize excessive multi-oscillator source levels BEFORE the
@@ -890,10 +904,18 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         right=(right*master_gain)>>7;
 #ifdef VG1_AUDIO_DIAGNOSTICS
         if(left>32767||left<-32767||right>32767||right<-32767)
+            e->diag_final_hot++;
+        if(left>28000||left<-28000||right>28000||right<-28000)
+            e->diag_output_guard++;
+#endif
+        left=vg1_output_softguard(left);
+        right=vg1_output_softguard(right);
+#ifdef VG1_AUDIO_DIAGNOSTICS
+        if(left>32767||left<-32767||right>32767||right<-32767)
             e->diag_final_over++;
 #endif
-        out[f*2u]+=v1_sat16(left);
-        out[f*2u+1u]+=v1_sat16(right);
+        out[f*2u]+=left;
+        out[f*2u+1u]+=right;
         /* Keep the unsaturated peak for post-build headroom assessment. */
         uint32_t peakl=(uint32_t)(left<0?-left:left);
         uint32_t peakr=(uint32_t)(right<0?-right:right);
