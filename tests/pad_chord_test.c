@@ -27,7 +27,7 @@ int main(void)
     key(1, 64); key(1, 67); key(1, 72); /* C major, first inversion */
     assert(pad_chord.root == 0 && pad_chord.third == 4);
     key(0, 64); key(0, 67); key(0, 72);
-    key(1, 62); key(1, 67); key(1, 69); /* Gsus2: G A D */
+    key(1, 55); key(1, 57); key(1, 62); /* Gsus2: G A D, G in bass */
     assert(pad_chord.root == 7 && pad_chord.third == 2);
     assert(pad_chord_pitch(64) == 69);
     puts("PAD LAB chord follow: all tests passed");
