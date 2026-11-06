@@ -49,6 +49,13 @@ int main(void) {
         for(uint32_t i=0;i<count[ci];i++)
             v1_hold(&engine,1,(uint8_t)(roots[k]+intervals[i]),127);
         uint32_t peak=run(V1_SR/6);
+        /* Delay/reverb peaks may build up AFTER the initial attack.
+           Extend the test for 5/8-note chord clusters in two registers
+           so no hidden feedback overdrive can evade the short matrix. */
+        if(count[ci]>=5u && (roots[k]==48u||roots[k]==72u)) {
+            uint32_t held_peak=run(V1_SR);
+            if(held_peak>peak)peak=held_peak;
+        }
         uint32_t f=filter_overloads();
         uint32_t b=engine.diag_post_gain_clamp;
         uint32_t pn=engine.diag_pan_over;
@@ -66,5 +73,10 @@ int main(void) {
     }
     printf("GAIN MATRIX TOTAL cases=%u flagged=%u filter=%u bus=%u pan=%u fx=%u output_guard=%u\n",
            cases,bad,filter,bus,pan,fx,guard);
-    return 0; /* diagnostic mode until the signal chain is corrected */
+    if(bad) {
+        fprintf(stderr,"FAIL: %u full-gain stage overloads remain across 320 cases\n",bad);
+        return 1;
+    }
+    puts("PASS: 320 wide-register gain/FX scenarios, zero filter/drive/mixer/pan/FX/output limiter activation");
+    return 0;
 }
