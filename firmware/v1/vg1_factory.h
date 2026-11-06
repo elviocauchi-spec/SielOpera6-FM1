@@ -81,7 +81,7 @@ static const v1_patch_t V1_FACTORY[V1_PRESETS] = {
       .osc={O(VG1_W_AJX_SAW3,97,64,49,0,0),O(VG1_W_TRI_SAW_MORPH,74,64,0,0,0),O(VG1_W_SINE,47,64,0,-12,0)},
       .amp=ADS(73,89,102,100),.filter_env=ADS(85,90,78,80),
       .cutoff=54,.resonance=13,.filter_type=V1_LP12,
-      .master=76
+      .master=70
     },
     { .name="NIGHT ARPEG",
       .vg_osc={.retrig=1,.fat=19,.vcs=3,.age=4},
