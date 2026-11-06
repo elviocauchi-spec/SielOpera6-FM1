@@ -89,6 +89,12 @@ typedef struct {
     int16_t reverb_predelay[8192]; /* 0..127ms at 44.1 kHz */
     uint32_t reverb_prepos,reverb_pos;
     uint32_t render_peak;
+#ifdef VG1_AUDIO_DIAGNOSTICS
+    /* Desktop-only counters; no extra work or memory in FM1 firmware. */
+    uint32_t diag_pre_drive_over,diag_drive_over,diag_osc_over;
+    uint32_t diag_delay_over,diag_reverb_over,diag_final_over;
+    uint32_t diag_frames_active,diag_gate_edges;
+#endif
 } v1_engine_t;
 
 static const uint32_t v1_pitch_inc[128] = {
@@ -508,6 +514,9 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         int32_t target_r=(!on || (mask_r&(1u<<e->gate_step)))?32767:0;
         uint32_t contour=p->vg_gate.contour;
         uint32_t slew=2u+((127u-contour)>>2);
+#ifdef VG1_AUDIO_DIAGNOSTICS
+        if((target==0)!=(e->gate_smooth==0))e->diag_gate_edges++;
+#endif
         e->gate_smooth+=(target-e->gate_smooth)/(int32_t)slew;
         e->gate_smooth_right+=(target_r-e->gate_smooth_right)/(int32_t)slew;
         /* Three independent LFOs. Calculations are integer and bounded. */
@@ -550,6 +559,9 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
                 pwm+=((int32_t)p->vg_env2.pwm*fe)>>15;
                 vg1_osc_stereo(&v->osc[j],&p->osc[j],vcs,pwm,&sl,&sr);
             }
+#ifdef VG1_AUDIO_DIAGNOSTICS
+            if(sl>50000||sl<-50000||sr>50000||sr<-50000)e->diag_osc_over++;
+#endif
             sl=v1_clip(sl,-50000,50000);
             sr=v1_clip(sr,-50000,50000);
             cut=(int32_t)p->cutoff+((uint32_t)e->modwheel*32u/127u)
@@ -573,9 +585,20 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             sl=vg1_filter_render(&v->f1,&v->f2,&v->pole6,&c,&c2,sl,p->filter_type);
             sr=vg1_filter_render(&v->f1_right,&v->f2_right,&v->pole6_right,
                                   &c,&c2,sr,p->filter_type);
+#ifdef VG1_AUDIO_DIAGNOSTICS
+            e->diag_frames_active++;
+            if(sl>32767||sl<-32767||sr>32767||sr<-32767)
+                e->diag_pre_drive_over++;
+#endif
             if(p->vg_amp.drive) {
-                sl=v1_sat16(sl+((sl*(int32_t)p->vg_amp.drive)>>7));
-                sr=v1_sat16(sr+((sr*(int32_t)p->vg_amp.drive)>>7));
+                int32_t dl=sl+((sl*(int32_t)p->vg_amp.drive)>>7);
+                int32_t dr=sr+((sr*(int32_t)p->vg_amp.drive)>>7);
+#ifdef VG1_AUDIO_DIAGNOSTICS
+                if(dl>32767||dl<-32767||dr>32767||dr<-32767)
+                    e->diag_drive_over++;
+#endif
+                sl=v1_sat16(dl);
+                sr=v1_sat16(dr);
             }
             /* Vanguard VELTRK=0 means NO velocity sensitivity. Positive
              * tracking grows with velocity; negative tracking reverses it. */
@@ -628,8 +651,13 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             case VG1_DELAY_WIDEN: fl=0;fr=oldr;break;
             default:fl=oldr;fr=oldl;break;
         }
-        e->delay_mem[0][dl]=(int16_t)v1_sat16(left+((fl*dfb)>>7));
-        e->delay_mem[1][dl]=(int16_t)v1_sat16(right+((fr*dfb)>>7));
+        int32_t dwl=left+((fl*dfb)>>7), dwr=right+((fr*dfb)>>7);
+#ifdef VG1_AUDIO_DIAGNOSTICS
+        if(dwl>32767||dwl<-32767||dwr>32767||dwr<-32767)
+            e->diag_delay_over++;
+#endif
+        e->delay_mem[0][dl]=(int16_t)v1_sat16(dwl);
+        e->delay_mem[1][dl]=(int16_t)v1_sat16(dwr);
         e->delay_pos++;
         if(p->vg_delay.on) {
             if(dmode==VG1_DELAY_WIDEN) {
@@ -667,7 +695,11 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             e->reverb_lp[j]+=(value-e->reverb_lp[j])*(127-rdamp)/127;
             int32_t fb=e->reverb_lp[j];
             if(j&1u) wetr+=fb; else wetl+=fb;
-            e->reverb_mem[j][rp]=(int16_t)v1_sat16((rev_in>>1)+((fb*96)>>7));
+            int32_t rw=(rev_in>>1)+((fb*96)>>7);
+#ifdef VG1_AUDIO_DIAGNOSTICS
+            if(rw>32767||rw<-32767)e->diag_reverb_over++;
+#endif
+            e->reverb_mem[j][rp]=(int16_t)v1_sat16(rw);
         }
         e->reverb_pos++;
         int32_t wetm=(wetl+wetr)>>1;
@@ -677,6 +709,10 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         right+=(wetr*rmix)>>9;
         left=(left*master_gain)>>7;
         right=(right*master_gain)>>7;
+#ifdef VG1_AUDIO_DIAGNOSTICS
+        if(left>32767||left<-32767||right>32767||right<-32767)
+            e->diag_final_over++;
+#endif
         out[f*2u]+=v1_sat16(left);
         out[f*2u+1u]+=v1_sat16(right);
         /* Keep the unsaturated peak for post-build headroom assessment. */
