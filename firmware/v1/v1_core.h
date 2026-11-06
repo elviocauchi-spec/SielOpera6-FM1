@@ -228,7 +228,7 @@ static inline int32_t vg1_stack_gain_q15(const v1_patch_t *p) {
         /* High-Q / high-drive patches need enough resonant-filter
            headroom to avoid hitting the drive knee ceiling altogether. */
         if(p->vg_amp.drive>=64u)limit=72u;
-        if(p->resonance>=70u)limit=40u;
+        if(p->resonance>=70u)limit=30u;
     }
     if(total<=limit)return 32768; /* true unity: Q8=256 */
     return (int32_t)((limit*32768u)/total);
@@ -730,8 +730,10 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
        This avoids distorting a chord at the final PCM safety stage. */
     if(sounding_voices>=3u && p->master>80u) {
         uint32_t excess=(uint32_t)p->master-80u;
-        uint32_t penalty=excess*(sounding_voices>=5u?2u:1u);
-        uint32_t pct=penalty<35u?100u-penalty:65u;
+        uint32_t penalty=excess*
+            (sounding_voices>=7u?3u:sounding_voices>=5u?2u:1u);
+        if(sounding_voices==3u)penalty+=(excess>>2);
+        uint32_t pct=penalty<45u?100u-penalty:55u;
         poly_gain_target=(poly_gain_target*(int32_t)pct)/100;
     }
     const int32_t stack_gain_q8=vg1_stack_gain_q15(p)>>7;
