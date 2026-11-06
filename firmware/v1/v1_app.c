@@ -85,7 +85,13 @@ static v1_note_msg_t msgs[V1_Q];
 static volatile uint32_t qw,qr;
 static void v1_queue(uint32_t on,uint32_t note,uint32_t vel) {
     uint32_t i=qw;
-    if(i-qr>=V1_Q)return;
+    if(i-qr>=V1_Q) {
+        /* Dropping a NOTE-OFF leaves the synth sustaining forever. Under
+           abnormal MIDI bursts, fail safe by releasing all held voices
+           instead of allowing an unbounded stuck note. */
+        if(!on)vg1_panic_requested=1;
+        return;
+    }
     msgs[i&(V1_Q-1u)].on=(uint8_t)on;
     msgs[i&(V1_Q-1u)].note=(uint8_t)note;
     msgs[i&(V1_Q-1u)].vel=(uint8_t)vel;
@@ -367,6 +373,10 @@ static void v1_panel_draw(void) {
     else
         cv_text(10,13,&FONT_S,"VANGUARD 1 ARCHITECTURE",high);
     cv_text(10,37,&FONT_S,v1_arp_mode(p)?"ARP ACTIVE":"ARP OFF",RGB(161,180,205));
+    /* Held keys distinguishes a missed key-up (HELD stays nonzero) from
+       the intended ADSR/FX release tail (HELD=0, VOICES fades to 0). */
+    cv_text(143,37,&FONT_S,"HELD",warm);
+    v1_num(tmp,v1.held_count);cv_text(207,37,&FONT_S,tmp,high);
     cv_text(10,61,&FONT_S,p->vg_gate.enabled?"TRANCEGATE ON":"TRANCEGATE OFF",RGB(161,180,205));
     cv_text(10,85,&FONT_S,"BPM",warm);
     v1_num(bpmtext,bpm);cv_text(52,85,&FONT_S,bpmtext,RGB(230,235,246));
