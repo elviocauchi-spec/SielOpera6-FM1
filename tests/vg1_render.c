@@ -210,7 +210,7 @@ static int render_drive_comparisons(const char *base) {
     char folder[512],path[640],name[64];
     snprintf(folder,sizeof folder,"%s/drive_comparisons",base);
     if(mkdir_if_needed(folder))return -1;
-    for(uint32_t i=0;i<V1_PRESETS;i++) {
+    for(uint32_t i=0;i<VG1_AUTHORED_PRESETS;i++) {
         v1_patch_t on=V1_FACTORY[i],off;
         if(!on.vg_amp.drive)continue; /* Gated Motion and Saturn already clean */
         off=on;
