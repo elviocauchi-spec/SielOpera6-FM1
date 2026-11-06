@@ -370,7 +370,7 @@ static uint32_t v1_param_value(uint32_t pg,uint32_t k) {
     if(pg==UI_GATE)return k==0?p->vg_gate.enabled:k==1?p->vg_gate.stereo:k==2?p->vg_gate.mix:p->vg_gate.contour;
     if(pg==UI_GATE_STEPS_L||pg==UI_GATE_STEPS_R){
         uint16_t m=pg==UI_GATE_STEPS_L?p->vg_gate.left:p->vg_gate.right;
-        return k==0?vg1_gate_cursor+1u:k==1?(m>>vg1_gate_cursor)&1u:k==2?0u:k==3?0u;
+        return k==0?vg1_gate_cursor+1u:k==1?((m>>vg1_gate_cursor)&1u):0u;
     }
     if(pg==UI_GATE_RATE)return k==0?p->vg_gate.speed.denominator:k==1?p->vg_gate.speed.variant:k==2?p->vg_gate.sync_to_song_position:bpm;
     if(pg==UI_DELAY)return k==0?p->vg_delay.on:k==1?p->vg_delay.type:k==2?p->vg_delay.mix:p->vg_delay.speed.denominator;
