@@ -62,7 +62,7 @@ jobs:
       - name: Audit silence, clipping, stereo, spectral signatures and preset identity
         run: python3 tools/vg1_audio_report.py build/vg1-audio
       - name: Compile original per-sample ADSR for exact DSP sound reference
-        run: gcc -std=c11 -O2 -Wall -Wextra -DVG1_LEGACY_ENVELOPES -o /tmp/vg1_render_legacy tests/vg1_render.c
+        run: gcc -std=c11 -O2 -Wall -Wextra -DVG1_LEGACY_ENVELOPES -DVG1_LEGACY_FAT_DIVIDE -o /tmp/vg1_render_legacy tests/vg1_render.c
       - name: Render legacy reference and verify optimized engine preserves every audio sample
         run: |
           /tmp/vg1_render_legacy build/vg1-legacy-audio > /tmp/vg1-legacy-render.log
