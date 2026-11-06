@@ -176,7 +176,7 @@ def build_app():
     cmds = [("cc", "-c", FW / "crt0.S", "-o", OUT / "crt0.o"),
             ("cc", "-c", FW / "hal" / "fm1_vec.S", "-o", OUT / "fm1_vec.o"),
             ("cc", "-c", FW / "hal" / "fm1_isr.S", "-o", OUT / "fm1_isr.o"),
-            ("cc", *flags, "-c", FW / ("v1/v1_app.c" if os.environ.get("V1_FM1") == "1" else "src/obervave.c"), "-o", OUT / "obervave.o")]
+            ("cc", *flags, "-c", FW / ("v1/v1_app.c" if (os.environ.get("VG1_FM1") == "1" or os.environ.get("V1_FM1") == "1") else "src/obervave.c"), "-o", OUT / "obervave.o")]
     tc_all(*cmds)
     elf = OUT / "obervave.elf"
     ld = FW / "app.ld"
@@ -320,14 +320,14 @@ def main():
         BOARD_PREFIX[BOARD] = BOARD_PREFIX[BOARD].replace(MODELS["pro"], MODELS[model])
         PRODUCT = BOARD_PREFIX[BOARD] + "00"
         suffix += "-" + model
-    name = f"v1-fm1{suffix}.fwsc" if os.environ.get("V1_FM1") == "1" else f"obervave{suffix}.fwsc"
+    name = f"vg1-fm1{suffix}.fwsc" if (os.environ.get("VG1_FM1") == "1" or os.environ.get("V1_FM1") == "1") else f"obervave{suffix}.fwsc"
     if a.release:                   # one digit each: the identity has room for two (X.Y; a .Z only in the text)
         m = re.fullmatch(r"(\d)\.(\d)(\.\d)?(-[A-Za-z0-9]+)?", a.release)
         if not m:
             raise SystemExit(f"--release {a.release}: use X.Y, X.Y.Z or X.Y-suffix, one digit each")
         PRODUCT = BOARD_PREFIX[BOARD] + m[1] + m[2]
         VERSION = m[1] + "." + m[2] + (m[3] or "")
-        name = f"v1-fm1-{a.release}{suffix}.fwsc" if os.environ.get("V1_FM1") == "1" else f"obervave-{a.release}{suffix}.fwsc"
+        name = f"vg1-fm1-{a.release}{suffix}.fwsc" if (os.environ.get("VG1_FM1") == "1" or os.environ.get("V1_FM1") == "1") else f"obervave-{a.release}{suffix}.fwsc"
     fm1pkg_make.SDK = a.sdk
     for rel, sha in SDK_SHA256.items():          # fail early without the SDK
         if hashlib.sha256(fm1pkg_make.sdk_file(rel)).hexdigest() != sha:
