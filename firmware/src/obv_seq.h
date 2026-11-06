@@ -83,10 +83,21 @@ static void pat_init(pattern_t *p)
         p->trk[t].pad[0] = p->trk[t].pad[1] = 0;
     }
 }
-static void pat_factory(uint32_t n, pattern_t *p)   /* a pattern never saved: empty, four bars of sixteenths */
+static void pat_factory(uint32_t n, pattern_t *p)   /* a pattern never saved: pad plus sparse chord-following ostinato */
 {
     (void)n;
     pat_init(p);
+    /* A is for playing pads. B: eight steps of simple chord tones with rests,
+       using C4/E4/G4 as root/third/fifth roles. Entirely deterministic. */
+    p->trk[0].len = 0;                   /* no automatic lead or note generation on A */
+    p->trk[1].len = 8;
+    p->trk[1].div = D_8;
+    p->st[1][0].note[0] = 60u; p->st[1][0].vel = 76u;
+    p->st[1][2].note[0] = 67u; p->st[1][2].vel = 58u;
+    p->st[1][3].note[0] = 64u; p->st[1][3].vel = 64u;
+    p->st[1][5].note[0] = 67u; p->st[1][5].vel = 56u;
+    p->st[1][7].note[0] = 64u; p->st[1][7].vel = 62u;
+    p->trk[2].len = 0; p->trk[3].len = 0; /* no surprise layers at startup */
 }
 
 /* ---- the player (ISR, per CTL block) */
