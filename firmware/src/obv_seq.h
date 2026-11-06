@@ -42,13 +42,13 @@ static step_t *seq_step(uint32_t t, uint32_t i) { return &pat.st[t % NTRK][i % S
  * The four fixed chord-tone roles still follow LIVE played harmony. */
 static seqtrk_t pad_demo_track = {8u, D_4, 50u, 0, 0u, {0, 0}};
 static const step_t pad_demo_notes[8] = {
-    {.note={60u,0,0,0}, .vel=91u, .gate=116u, .ratch=0, .chance=100u},
+    {.note={60u,0,0,0}, .vel=102u, .gate=116u, .ratch=0, .chance=100u},
     {0},
-    {.note={67u,0,0,0}, .vel=78u, .gate=118u, .ratch=0, .chance=100u},
+    {.note={67u,0,0,0}, .vel=91u, .gate=118u, .ratch=0, .chance=100u},
     {0},
-    {.note={64u,0,0,0}, .vel=85u, .gate=118u, .ratch=0, .chance=100u},
+    {.note={64u,0,0,0}, .vel=98u, .gate=118u, .ratch=0, .chance=100u},
     {0},
-    {.note={72u,0,0,0}, .vel=72u, .gate=112u, .ratch=0, .chance=100u},
+    {.note={72u,0,0,0}, .vel=87u, .gate=112u, .ratch=0, .chance=100u},
     {0},
 };
 static const step_t *pad_seq_step(uint32_t t, uint32_t i)
