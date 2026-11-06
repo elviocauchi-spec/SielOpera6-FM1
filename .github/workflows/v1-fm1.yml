@@ -1,4 +1,4 @@
-name: V-1 FM1 independent synth validation
+name: VG-1 FM1 / original Vanguard recreation validation
 
 on:
   workflow_dispatch:
@@ -50,11 +50,11 @@ jobs:
           done
           test -f "$HOME/fw-AC79_AIoT_SDK/cpu/wl82/tools/uboot.boot"
       - name: Build separate V-1 FM1 firmware
-        run: BOARD=fm1 V1_FM1=1 sh build.sh
+        run: BOARD=fm1 VG1_FM1=1 sh build.sh
       - name: Verify output
-        run: test -s build/v1-fm1.fwsc
+        run: test -s build/vg1-fm1.fwsc
       - uses: actions/upload-artifact@v4
         with:
-          name: V-1-FM1-experimental
-          path: build/v1-fm1.fwsc
+          name: VG1-Vanguard1-FM1-experimental
+          path: build/vg1-fm1.fwsc
           if-no-files-found: error
