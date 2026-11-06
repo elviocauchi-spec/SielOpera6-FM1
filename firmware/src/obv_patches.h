@@ -195,7 +195,7 @@ static const uint8_t PF_WURLI[] = {P_O1_WAVE, W_PLS, P_O1_PW, 38, P_O2_WAVE, W_P
     P_LFO_PHASE, LP_FREE, P_LFO_AMP, 30, P_VINTAGE, 30, P_SPREAD, 60, P_REV_SIZE, 75, P_REV_MIX, 20, X};
 #undef X
 
-static const factory_t FACT_INIT = {"INIT", PF_INIT};   /* 71-99 */
+static const factory_t FACT_INIT = {"INIT", PF_INIT};   /* 81-99 unless saved by the user */
 static const factory_t FACT_VIBE[] = {                  /* 65-70 (VIBE): drums and keys */
     {"KICK", PF_KICK}, {"SNARE", PF_SNARE}, {"HIHAT", PF_HIHAT}, {"CLAP", PF_CLAP}, {"E-PIANO", PF_EPIANO}, {"WURLI", PF_WURLI}};
 #define NVIBE (sizeof FACT_VIBE / sizeof FACT_VIBE[0])
@@ -207,7 +207,7 @@ static const uint8_t PF_OP_PAD[] = {P_MODE,M_POLY,P_O1_WAVE,W_SAW,P_O2_WAVE,W_PL
 static const uint8_t PF_OP_LEAD[] = {P_MODE,M_POLY,P_O1_WAVE,W_PLS,P_O2_WAVE,W_SAW,P_O2_SEMI,24,P_O2_FINE,68,P_FTYPE,F_LP24,P_CUTOFF,85,P_RESO,33,P_FENV_AMT,92,P_FA,2,P_FD,55,P_FS,55,P_FR,35,P_AA,2,P_AD,58,P_AS,110,P_AR,37,P_SPREAD,0,P_CHO_MIX,0,P_DLY_MIX,0,P_REV_MIX,0,255};
 static const uint8_t PF_OP_KEYS[] = {P_MODE,M_POLY,P_O1_WAVE,W_PLS,P_O2_WAVE,W_SAW,P_O2_SEMI,24,P_O2_FINE,65,P_FTYPE,F_LP24,P_CUTOFF,67,P_RESO,12,P_FENV_AMT,97,P_FA,0,P_FD,55,P_FS,18,P_FR,48,P_AA,0,P_AD,65,P_AS,36,P_AR,52,P_SPREAD,0,P_CHO_MIX,0,P_DLY_MIX,0,P_REV_MIX,0,255};
 
-/* OPERA PAD LAB: additional factory sounds in formerly INIT-only slots 71-74.
+/* OPERA PAD LAB: additional factory sounds in formerly INIT-only slots 71-80.
  * Saved user programs still take precedence. Existing factory indices 1-70,
  * parameter numbering, patch size and flash layout are not changed.
  * Parameters are deliberately conservative for the FM-1's six-voice budget. */
