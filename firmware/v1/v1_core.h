@@ -40,6 +40,7 @@ typedef struct {
     v1_svf_state_t f1, f2;
     v1_env_state_t a, f;
     uint32_t age;
+    int32_t fa1,fa2,fa3,fk; /* filter coefficients, updated at control rate */
     uint8_t note, velocity, gate, active;
 } v1_voice_t;
 
@@ -356,6 +357,9 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         int32_t dry=0, left,right;
         if(p->arp_mode!=V1_ARP_OFF){
             if(e->arp_phase==0 && e->held_count)v1_arp_tick(e,bpm);
+            if(e->arp_active && e->arp_phase > (step_frames*(uint32_t)(p->arp_gate+1u))/128u) {
+                v1_note_off(e,e->arp_note);e->arp_active=0;
+            }
             e->arp_phase++;
             if(e->arp_phase>=step_frames)e->arp_phase=0;
         }
@@ -364,7 +368,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         e->gate_smooth+=(target-e->gate_smooth)>>5;
         /* Three independent LFOs. Calculations are integer and bounded. */
         for(j=0;j<3;j++) {
-            uint32_t inc=(uint32_t)(p->lfo_rate[j]+1u)*40u; /* 0.4 - ~50 Hz */
+            uint32_t inc=(uint32_t)(p->lfo_rate[j]+1u)*50000u; /* ~0.5 to 65 Hz */
             e->lfo_ph[j]+=inc;
             e->lfo[j]=v1_tri_lfo(e->lfo_ph[j]);
         }
@@ -381,7 +385,11 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             cut=(int32_t)p->cutoff + (((int32_t)p->filter_env_depth*fe)>>15)
                 + ((int32_t)p->lfo_filter*e->lfo[1]>>16);
             cut=v1_clip(cut,0,127);
-            v1_svf_coef_t c=v1_filter_coeff(cut,p->resonance);
+            v1_svf_coef_t c;
+            if((e->frames&31u)==0u) {
+                c=v1_filter_coeff(cut,p->resonance);
+                v->fa1=c.a1;v->fa2=c.a2;v->fa3=c.a3;v->fk=c.k;
+            } else {c.a1=v->fa1;c.a2=v->fa2;c.a3=v->fa3;c.k=v->fk;}
             s=v1_svf(&v->f1,&c,s,p->filter_type);
             if(p->filter_type>=V1_LP24)s=v1_svf(&v->f2,&c,s,p->filter_type);
             amp=(amp*(int32_t)v->velocity)>>7;
