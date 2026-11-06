@@ -79,6 +79,9 @@ typedef struct {
     uint16_t gate_step;
     uint32_t gate_phase;
     int32_t gate_smooth,gate_smooth_right;
+    /* Second smoothing pole softens the corners of fast Trancegate cuts
+       without smearing the underlying 16-step timing. */
+    int32_t gate_out_left,gate_out_right;
     uint8_t held[16], held_velocity[16], held_count, arp_pos;
     uint8_t arp_note, arp_active, arp_direction;
     uint32_t arp_phase;
@@ -298,6 +301,21 @@ static inline int32_t v1_svf(v1_svf_state_t *s,const v1_svf_coef_t *c,int32_t x,
     }
 }
 #include "vg1_filter_dsp.h"
+/* Vanguard Trancegate CONTOUR is a rhythmic envelope-shape control, not
+   an instantaneous audio mute. Two modest cascaded low-pass ramps soften
+   BOTH corners of each chop (attack and release), suppressing clicks with
+   only shifts/multiplications in the sample loop, no division or libm.
+   Higher contour = tighter gate. Alpha spans 128..1144 in Q15:
+   at 104, each stage reaches a ~0.8ms time constant at 44.1kHz. */
+static inline int32_t vg1_gate_contour_alpha(uint32_t contour) {
+    return 128+(int32_t)v1_clip((int32_t)contour,0,127)*8;
+}
+static inline int32_t vg1_gate_smooth(int32_t current,int32_t target,int32_t alpha_q15) {
+    int32_t d=target-current,step=(d*alpha_q15)>>15;
+    if(!step && d)step=d>0?1:-1; /* no -60dB residual from integer rounding */
+    int32_t y=current+step;
+    return v1_clip(y,0,32767);
+}
 static inline uint32_t v1_quarter(const v1_engine_t *e, uint32_t bpm) {
     (void)e; if (bpm<40)bpm=40; if(bpm>240)bpm=240;
     return 60u*V1_SR/bpm;
@@ -317,6 +335,7 @@ static void v1_engine_init(v1_engine_t *e,const v1_patch_t *p) {
     e->midi_volume=e->midi_expression=127u;
     e->tempo_bpm=128u;
     e->gate_smooth=e->gate_smooth_right=32767;
+    e->gate_out_left=e->gate_out_right=32767;
 }
 static void v1_note_on(v1_engine_t *e,uint8_t note,uint8_t vel) {
     uint32_t i,j,choice=0,oldest=0xffffffffu,legato=0;
@@ -468,6 +487,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
     if(p->vg_gate.enabled)gate_frames=vg1_rate_samples(quarter,p->vg_gate.speed);
     uint32_t delay_frames=1u;
     uint32_t lfo_inc[3],vi;
+    const int32_t gate_alpha=vg1_gate_contour_alpha(p->vg_gate.contour);
     uint32_t arp_gate=p->vg_arp.gate;
     uint32_t arp_release;
     int32_t bendc,vib_depthc,master_gain;
@@ -512,13 +532,13 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         uint16_t mask_r=stereo?p->vg_gate.right:mask_l;
         int32_t target=(!on || (mask_l&(1u<<e->gate_step)))?32767:0;
         int32_t target_r=(!on || (mask_r&(1u<<e->gate_step)))?32767:0;
-        uint32_t contour=p->vg_gate.contour;
-        uint32_t slew=2u+((127u-contour)>>2);
 #ifdef VG1_AUDIO_DIAGNOSTICS
         if((target==0)!=(e->gate_smooth==0))e->diag_gate_edges++;
 #endif
-        e->gate_smooth+=(target-e->gate_smooth)/(int32_t)slew;
-        e->gate_smooth_right+=(target_r-e->gate_smooth_right)/(int32_t)slew;
+        e->gate_smooth=vg1_gate_smooth(e->gate_smooth,target,gate_alpha);
+        e->gate_smooth_right=vg1_gate_smooth(e->gate_smooth_right,target_r,gate_alpha);
+        e->gate_out_left=vg1_gate_smooth(e->gate_out_left,e->gate_smooth,gate_alpha);
+        e->gate_out_right=vg1_gate_smooth(e->gate_out_right,e->gate_smooth_right,gate_alpha);
         /* Three independent LFOs. Calculations are integer and bounded. */
         for(j=0;j<3;j++) {
             e->lfo_ph[j]+=lfo_inc[j];
@@ -627,8 +647,8 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         /* The original Vanguard has no chorus block. Remove the generic
            prototype chorus entirely. FAT/VCS provide stereo width instead. */
         int32_t mix=p->vg_gate.mix;
-        int32_t gl=on?(32767-((int32_t)mix*(32767-e->gate_smooth)/127)):32767;
-        int32_t gr=on?(32767-((int32_t)mix*(32767-e->gate_smooth_right)/127)):32767;
+        int32_t gl=on?(32767-((int32_t)mix*(32767-e->gate_out_left)/127)):32767;
+        int32_t gr=on?(32767-((int32_t)mix*(32767-e->gate_out_right)/127)):32767;
         left=(dryl*gl)>>15;
         right=(dryr*gr)>>15;
         /* Original Vanguard order: TRANCEGATE -> DELAY -> REVERB.
