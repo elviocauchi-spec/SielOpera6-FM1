@@ -62,7 +62,7 @@ int main(void) {
         uint32_t x=engine.diag_delay_over+engine.diag_predelay_over+
                    engine.diag_reverb_over;
         uint32_t g=engine.diag_output_guard;
-        if(f||b||pn||x||engine.diag_final_hot||engine.diag_osc_over||
+        if(f||b||pn||x||g||engine.diag_final_hot||engine.diag_osc_over||
            engine.diag_drive_plateau||peak>=32767) {
             printf("GAIN_MATRIX %-14s root=%u voices=%u mod=%u peak=%u filter=%u osc=%u driveplateau=%u bus=%u pan=%u fx=%u finalhot=%u guard=%u\n",
                    patch.name,roots[k],count[ci],mod,peak,f,engine.diag_osc_over,
