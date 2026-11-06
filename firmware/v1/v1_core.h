@@ -101,6 +101,8 @@ typedef struct {
     uint32_t diag_pre_drive_over,diag_drive_over,diag_osc_over;
     uint32_t diag_delay_over,diag_reverb_over,diag_final_over;
     uint32_t diag_frames_active,diag_gate_edges;
+    uint32_t diag_poly_mix_over,diag_poly_mix_16_over;
+    uint32_t diag_pan_over,diag_predelay_over;
 #endif
 } v1_engine_t;
 
@@ -675,6 +677,12 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             dryl+=sl;
             dryr+=sr;
         }
+#ifdef VG1_AUDIO_DIAGNOSTICS
+        if(dryl>65535||dryl<-65535||dryr>65535||dryr<-65535)
+            e->diag_poly_mix_over++;
+        if(dryl>32767||dryl<-32767||dryr>32767||dryr<-32767)
+            e->diag_poly_mix_16_over++;
+#endif
         dryl=v1_clip(dryl,-65535,65535);
         dryr=v1_clip(dryr,-65535,65535);
         /* AMP PAN plus the original SPREAD autopanning parameter.
@@ -684,6 +692,10 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
                   ((int32_t)p->vg_amp.spread*v1_sine_sample(e->auto_pan_ph)>>16),0,127);
         dryl=(dryl*(254-pan*2))/127;
         dryr=(dryr*(pan*2))/127;
+#ifdef VG1_AUDIO_DIAGNOSTICS
+        if(dryl>65535||dryl<-65535||dryr>65535||dryr<-65535)
+            e->diag_pan_over++;
+#endif
         /* Gate is applied to stereo after per-voice synthesis, not copied into
            each oscillator. ReFX 1.6 permits independent L/R gate patterns. */
         /* The original Vanguard has no chorus block. Remove the generic
@@ -751,6 +763,9 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         if(predelay_frames>8191u)predelay_frames=8191u;
         int32_t predelayed=predelay_frames?
             e->reverb_predelay[(pre-predelay_frames)&8191u]:rev_in;
+#ifdef VG1_AUDIO_DIAGNOSTICS
+        if(rev_in>32767||rev_in<-32767)e->diag_predelay_over++;
+#endif
         e->reverb_predelay[pre]=(int16_t)v1_sat16(rev_in);
         e->reverb_prepos++;
         rev_in=predelayed;
