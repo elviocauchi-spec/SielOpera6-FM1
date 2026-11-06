@@ -94,7 +94,7 @@ static const v1_patch_t V1_FACTORY[V1_PRESETS] = {
 static v1_engine_t v1 __attribute__((section(".pool")));
 static volatile uint32_t req_program;
 static uint32_t got_program, page, octave, bpm=128, panel_last, keys_last;
-static uint32_t page_changed;
+static volatile uint32_t v1_dsp_pct; /* time in our DSP relative to the 256-frame audio deadline */
 enum { UI_PLAY,UI_OSC1,UI_OSC2,UI_OSC3,UI_FILTER,UI_AMP,UI_FENV,UI_MOD,
        UI_FX,UI_GATE,UI_GATE_STEPS,UI_ARP,UI_MASTER,UI_PAGES };
 static const char *const UI_TITLES[UI_PAGES] = {
@@ -115,7 +115,7 @@ static const char *const UI_LABELS[UI_PAGES][4] = {
     {"ON/OFF","RATE","DEPTH","BPM"},
     {"STEPS 1-4","STEPS 5-8","STEPS 9-12","STEPS 13-16"},
     {"MODE","RATE","GATE","OCTAVES"},
-    {"LEVEL","FEEDBACK","LFO 2","LFO 3"}
+    {"LEVEL","FEEDBACK","LFO 2","VOICES"}
 };
 static const char *const WAVE_NAMES[]={"OFF","SAW","PULSE","TRI","SINE","SUPERSAW","NOISE"};
 static const char *const FILTER_NAMES[]={"LP12","HP12","BP12","NOTCH","LP24","HP24","BP24"};
@@ -137,6 +137,7 @@ static void v1_queue(uint32_t on,uint32_t note,uint32_t vel) {
     qw=i+1;
 }
 static void app_audio(int32_t *out,uint32_t n) {
+    uint32_t t0=fm1_ticks();
     if(req_program!=got_program) {
         got_program=req_program%V1_PRESETS;
         v1_panic(&v1);
@@ -150,6 +151,11 @@ static void app_audio(int32_t *out,uint32_t n) {
         v1_hold(&v1,m.on,m.note,m.vel);
     }
     v1_engine_render(&v1,out,n,bpm);
+    {
+        uint32_t usec=(fm1_ticks()-t0)/FM1_TICKS_PER_US;
+        uint32_t deadline=(n*1000000u)/V1_SR;
+        v1_dsp_pct=deadline ? (usec*100u)/deadline : 0;
+    }
 }
 static void app_idle(void) { platform_poll(); }
 static uint32_t v1_bound(int32_t v,int32_t max) {
@@ -200,7 +206,12 @@ static void v1_param_change(uint32_t pg,uint32_t k,int32_t n) {
         if(k==2)field=&p->arp_gate;
         if(k==3){field=&p->arp_octaves;max=4;}
     } else if(pg==UI_MASTER) {
-        field=k==0?&p->master:k==1?&p->delay_feedback:k==2?&p->lfo_rate[1]:&p->lfo_rate[2];
+        if(k==3) {
+            int32_t voices=p->voice_limit?p->voice_limit:8;
+            p->voice_limit=(uint8_t)v1_clip(voices+n*4,4,V1_VOICES);
+            return;
+        }
+        field=k==0?&p->master:k==1?&p->delay_feedback:&p->lfo_rate[1];
     } else {
         field=k==0?&p->cutoff:k==1?&p->resonance:k==2?&p->chorus:&p->trance_depth;
     }
@@ -221,7 +232,7 @@ static uint32_t v1_param_value(uint32_t pg,uint32_t k) {
     if(pg==UI_GATE)return k==0?p->trance_enabled:k==1?p->trance_rate:k==2?p->trance_depth:bpm;
     if(pg==UI_GATE_STEPS)return (p->trance_mask>>(k*4u))&15u;
     if(pg==UI_ARP)return k==0?p->arp_mode:k==1?p->arp_rate:k==2?p->arp_gate:p->arp_octaves;
-    if(pg==UI_MASTER)return k==0?p->master:k==1?p->delay_feedback:k==2?p->lfo_rate[1]:p->lfo_rate[2];
+    if(pg==UI_MASTER)return k==0?p->master:k==1?p->delay_feedback:k==2?p->lfo_rate[1]:(p->voice_limit?p->voice_limit:8u);
     return k==0?p->cutoff:k==1?p->resonance:k==2?p->chorus:p->trance_depth;
 }
 static void v1_num(char *p,uint32_t v) {
@@ -263,7 +274,9 @@ static void v1_panel_draw(void) {
     cv_text(10,61,&FONT_S,p->trance_enabled?"TRANCEGATE ON":"TRANCEGATE OFF",RGB(161,180,205));
     cv_text(10,85,&FONT_S,"BPM",warm);
     v1_num(bpmtext,bpm);cv_text(52,85,&FONT_S,bpmtext,RGB(230,235,246));
-    cv_text(138,85,&FONT_S,"V-1  0.1",high);
+    cv_text(133,85,&FONT_S,"DSP",high);
+    v1_num(tmp,v1_dsp_pct);
+    cv_text(178,85,&FONT_S,tmp,v1_dsp_pct>80?RGB(248,85,93):high);
     cv_blit(0,112);
 }
 static void v1_midi(void) {
