@@ -82,10 +82,9 @@ typedef struct {
     uint8_t held[16], held_velocity[16], held_count, arp_pos;
     uint8_t arp_note, arp_active, arp_direction;
     uint32_t arp_phase;
-    int16_t chorus_mem[2][1024];
-    uint32_t chorus_pos;
     int16_t delay_mem[2][32768];
     uint32_t delay_pos;
+    int32_t delay_lp[2],reverb_lp[4];
     int16_t reverb_mem[4][2048];
     uint32_t reverb_pos;
     uint32_t render_peak;
@@ -408,7 +407,13 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
     if(e->patch.vg_arp.on) step_frames=vg1_rate_samples(quarter,e->patch.vg_arp.speed);
     if(e->patch.vg_gate.enabled)gate_frames=vg1_rate_samples(quarter,e->patch.vg_gate.speed);
     uint32_t delay_frames=v1_quarter(e,bpm)*3u/4u;
+    if(e->patch.vg_delay.on) {
+        if(e->patch.vg_delay.type==VG1_DELAY_WIDEN)
+            delay_frames=220u*(e->patch.vg_delay.widen_ms?e->patch.vg_delay.widen_ms:80u);
+        else delay_frames=vg1_rate_samples(quarter,e->patch.vg_delay.speed);
+    }
     if(delay_frames>32767u) delay_frames=32767u;
+    if(!delay_frames)delay_frames=1u;
     const v1_patch_t *p=&e->patch;
     if(!step_frames)step_frames=1;
     if(!gate_frames)gate_frames=1;
@@ -503,40 +508,64 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         dry=v1_clip(dry,-65535,65535);
         /* Gate is applied to stereo after per-voice synthesis, not copied into
            each oscillator. ReFX 1.6 permits independent L/R gate patterns. */
-        /* Effects deliberately post-gate: echoed/reverberant tails survive gates. */
-        int32_t ci=e->chorus_pos&1023u;
-        uint32_t mod=(uint32_t)(e->lfo[2]+32768);
-        uint32_t d1=430u+(mod>>9), d2=600u-(mod>>9);
-        int32_t chl=e->chorus_mem[0][(ci-d1)&1023u];
-        int32_t chr=e->chorus_mem[1][(ci-d2)&1023u];
-        e->chorus_mem[0][ci]=(int16_t)v1_sat16(dry);
-        e->chorus_mem[1][ci]=(int16_t)v1_sat16(dry);
-        e->chorus_pos++;
+        /* The original Vanguard has no chorus block. Remove the generic
+           prototype chorus entirely. FAT/VCS provide stereo width instead. */
         int32_t mix=p->vg_gate.enabled?p->vg_gate.mix:p->trance_depth;
         int32_t gl=on?(32767-((int32_t)mix*(32767-e->gate_smooth)/127)):32767;
         int32_t gr=on?(32767-((int32_t)mix*(32767-e->gate_smooth_right)/127)):32767;
-        left=(dry*gl>>15)+((chl*(int32_t)p->chorus)>>8);
-        right=(dry*gr>>15)+((chr*(int32_t)p->chorus)>>8);
+        left=(dry*gl)>>15;
+        right=(dry*gr)>>15;
+        /* Original Vanguard order: TRANCEGATE -> DELAY -> REVERB.
+           Delay supports the documented mono, stereo, cross and widen modes. */
         uint32_t dl=e->delay_pos&32767u;
         int32_t oldl=e->delay_mem[0][(dl-delay_frames)&32767u];
         int32_t oldr=e->delay_mem[1][(dl-delay_frames)&32767u];
-        e->delay_mem[0][dl]=(int16_t)v1_sat16(left+((oldr*(int32_t)p->delay_feedback)>>7));
-        e->delay_mem[1][dl]=(int16_t)v1_sat16(right+((oldl*(int32_t)p->delay_feedback)>>7));
+        uint32_t dmode=p->vg_delay.on?p->vg_delay.type:VG1_DELAY_CROSS;
+        int32_t dfb=p->vg_delay.on?p->vg_delay.feedback:p->delay_feedback;
+        int32_t dmix=p->vg_delay.on?p->vg_delay.mix:p->delay;
+        int32_t damp=p->vg_delay.on?p->vg_delay.damp:0;
+        e->delay_lp[0]+=(oldl-e->delay_lp[0])*(127-damp)/127;
+        e->delay_lp[1]+=(oldr-e->delay_lp[1])*(127-damp)/127;
+        oldl=e->delay_lp[0]; oldr=e->delay_lp[1];
+        int32_t fl=0,fr=0;
+        switch(dmode) {
+            case VG1_DELAY_MONO: fl=fr=(oldl+oldr)>>1; break;
+            case VG1_DELAY_STEREO: fl=oldl;fr=oldr;break;
+            case VG1_DELAY_CROSS: fl=oldr;fr=oldl;break;
+            case VG1_DELAY_WIDEN: fl=0;fr=oldr;break;
+            default:fl=oldr;fr=oldl;break;
+        }
+        e->delay_mem[0][dl]=(int16_t)v1_sat16(left+((fl*dfb)>>7));
+        e->delay_mem[1][dl]=(int16_t)v1_sat16(right+((fr*dfb)>>7));
         e->delay_pos++;
-        left+=(oldl*(int32_t)p->delay)>>7;
-        right+=(oldr*(int32_t)p->delay)>>7;
-        static const uint16_t tap[4]={1109,1327,1559,1801};
-        int32_t wet=0;
+        if(dmode!=VG1_DELAY_WIDEN)left+=(oldl*dmix)>>7;
+        right+=(oldr*dmix)>>7;
+
+        /* Room model: four comb paths, stereo mix, damp, size and width.
+           Input AFTER delay, as described in the Vanguard 1.6 manual. */
+        static const uint16_t taps[4]={1109,1327,1559,1801};
+        int32_t room=p->vg_reverb.on?p->vg_reverb.room_size:64;
+        int32_t rdamp=p->vg_reverb.on?p->vg_reverb.damp:32;
+        int32_t rwidth=p->vg_reverb.on?p->vg_reverb.width:127;
+        int32_t rmix=p->vg_reverb.on?p->vg_reverb.mix:p->reverb;
+        int32_t rev_in=(left+right)>>2;
+        int32_t wetl=0,wetr=0;
         uint32_t rp=e->reverb_pos&2047u;
-        for(j=0;j<4;j++){
-            uint32_t index=(rp+2048u-tap[j])&2047u;
+        for(j=0;j<4;j++) {
+            uint32_t tap=taps[j]+(uint32_t)room/2u;
+            uint32_t index=(rp+2048u-tap)&2047u;
             int32_t value=e->reverb_mem[j][index];
-            wet+=value;
-            e->reverb_mem[j][rp]=(int16_t)v1_sat16((dry>>2)+((value*96)>>7));
+            e->reverb_lp[j]+=(value-e->reverb_lp[j])*(127-rdamp)/127;
+            int32_t fb=e->reverb_lp[j];
+            if(j&1u) wetr+=fb; else wetl+=fb;
+            e->reverb_mem[j][rp]=(int16_t)v1_sat16((rev_in>>1)+((fb*96)>>7));
         }
         e->reverb_pos++;
-        left+=(wet*(int32_t)p->reverb)>>10;
-        right+=(wet*(int32_t)p->reverb)>>10;
+        int32_t wetm=(wetl+wetr)>>1;
+        wetl=(wetl*rwidth+wetm*(127-rwidth))/127;
+        wetr=(wetr*rwidth+wetm*(127-rwidth))/127;
+        left+=(wetl*rmix)>>9;
+        right+=(wetr*rmix)>>9;
         left=(left*(int32_t)p->master)>>7;
         right=(right*(int32_t)p->master)>>7;
         out[f*2u]+=v1_sat16(left);
