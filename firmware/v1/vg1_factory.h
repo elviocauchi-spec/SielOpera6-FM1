@@ -56,7 +56,7 @@ static const v1_patch_t V1_FACTORY[V1_PRESETS] = {
       .osc={O(VG1_W_AJX_SAW3,108,64,65,0,0),O(VG1_W_PULSE_PWM,99,74,0,0,4),O(VG1_W_SAWTOOTH,65,64,0,-12,0)},
       .amp=ADS(28,65,110,70),.filter_env=ADS(22,56,70,68),
       .cutoff=68,.resonance=23,.filter_type=V1_LP12,
-      .master=91
+      .master=48
     },
     { .name="ACID RUNNER",
       .vg_osc={.retrig=1,.fat=0,.vcs=2,.age=0},
@@ -81,7 +81,7 @@ static const v1_patch_t V1_FACTORY[V1_PRESETS] = {
       .osc={O(VG1_W_AJX_SAW3,97,64,49,0,0),O(VG1_W_TRI_SAW_MORPH,74,64,0,0,0),O(VG1_W_SINE,47,64,0,-12,0)},
       .amp=ADS(73,89,102,100),.filter_env=ADS(85,90,78,80),
       .cutoff=54,.resonance=13,.filter_type=V1_LP12,
-      .master=99
+      .master=76
     },
     { .name="NIGHT ARPEG",
       .vg_osc={.retrig=1,.fat=19,.vcs=3,.age=4},
@@ -96,7 +96,7 @@ static const v1_patch_t V1_FACTORY[V1_PRESETS] = {
       .osc={O(VG1_W_SAWTOOTH,117,64,0,0,0),O(VG1_W_SINE,64,64,0,12,0),O(VG1_W_PULSE_PWM,82,48,0,0,7)},
       .amp=ADS(0,25,0,25),.filter_env=ADS(0,36,0,30),
       .cutoff=67,.resonance=32,.filter_type=V1_LP12,
-      .master=104
+      .master=72
     },
     { .name="LASER SHOT",
       .vg_osc={.retrig=1,.fat=9,.vcs=2,.age=0},
