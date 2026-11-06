@@ -21,6 +21,7 @@ static void app_idle(void);
 #include "obv_params.h"
 #include "obv_fx.h"
 #include "obv_engine.h"
+#include "pad_chord.h"
 #include "obv_seq.h"
 #include "obv_patches.h"
 
@@ -238,6 +239,7 @@ static void play_note(uint32_t on, uint32_t note, uint32_t vel)
 {
     note &= 127u;
     if (on) note_part[note] = (uint8_t)(seq_trk % NTRK);
+    if (note_part[note] == 0u) pad_chord_event(on, note);
     note_event_p(note_part[note], on, note, vel);
 }
 static int rec_keys(void) { return !ed_patch(P_ARP_MODE)->v[P_ARP_MODE]; }   /* (feeding an arp: its notes are recorded) */
@@ -835,7 +837,14 @@ static void draw_page(void)
         k[i].present = 0;
         k[i].bip = 0;
         k[i].value[0] = 0;
-        if (page == PG_MIXER && !layer) {      /* the mixer: A-D, the row LEVEL / PAN / SEND (F1 again: the next row) */
+        if (page == PG_BACKING && !layer) {
+            static const char *const BL[4] = {"FOLLOW", "LEVEL", "SPEED", "OCTAVE"};
+            k[i].label = BL[i]; k[i].present = 1;
+            if (i == 0u) { scat(k[i].value, pad_follow_enabled ? "ON" : "OFF"); k[i].v = pad_follow_enabled; k[i].max = 1; }
+            else if (i == 1u) { fmt_u(k[i].value, set.mix_lvl[1]); k[i].v = set.mix_lvl[1]; k[i].max = 127; }
+            else if (i == 2u) { scat(k[i].value, DIV_NAME[pat.trk[1].div % NDIV]); k[i].v = pat.trk[1].div % NDIV; k[i].max = NDIV - 1; }
+            else { fmt_s(k[i].value, pad_follow_octave); k[i].v = pad_follow_octave + 2; k[i].max = 4; }
+        } else if (page == PG_MIXER && !layer) {      /* the mixer: A-D, the row LEVEL / PAN / SEND (F1 again: the next row) */
             static const char *const ML[NTRK] = {"A", "B", "C", "D"}, *const MM[4] = {"VOLUME", "FILTER", "DRIVE", "COMP"};
             uint32_t t = i;
             k[i].label = mix_row == 6u ? MM[t] : ML[t];
@@ -2092,7 +2101,7 @@ static void app_main(void)
                         } else if (LL[k] == L_EDIT && is_seq_page(page) && SV_ENTRY(seq_view)) seq_clear_cursor();
                         else if (LL[k] == L_EDIT) np = cycle_page(PG_OSC1, 5);
                         else if (LL[k] == L_FX) np = cycle_page(PG_CHORUS, 4);
-                        else if (LL[k] == L_GLO) np = page == PG_GLOBAL ? PG_VOICE : page == PG_VOICE ? PG_OUTPUT : PG_GLOBAL;
+                        else if (LL[k] == L_GLO) np = page == PG_BACKING ? PG_GLOBAL : page == PG_GLOBAL ? PG_VOICE : page == PG_VOICE ? PG_OUTPUT : PG_BACKING;
                         else if (is_seq_page(page)) {   /* in the sequencer: SAVE PATTERN? - SAVE again saves (as zp12:
                                                  * now; playing, at the stop), anything else: no */
                             if (pat_save_armed && fm1_ms - pat_save_t < 3000u) { pat_save_armed = 0; pat_save_to(set.pat); }
@@ -2257,7 +2266,13 @@ static void app_main(void)
             int32_t p = PAGE[page].p[k];
             if ((e = fm1_enc_take(ENC_KNOB1 + k)) == 0) continue;
             if (e > 1 || e < -1) e *= 3;        /* a fast turn goes further */
-            if (page == PG_MIXER && !layer) {  /* the mixer: track k's LEVEL / PAN / SEND */
+            if (page == PG_BACKING && !layer) {
+                if (k == 0u) pad_follow_enabled = (uint32_t)clampi((int32_t)pad_follow_enabled + (e > 0 ? 1 : -1), 0, 1);
+                else if (k == 1u) { set.mix_lvl[1] = (uint8_t)clampi((int32_t)set.mix_lvl[1] + e, 0, 127); mix_apply(); set_dirty = 1; set_t = fm1_ms; }
+                else if (k == 2u) { pat.trk[1].div = (uint8_t)clampi((int32_t)pat.trk[1].div + (e > 0 ? 1 : -1), 0, NDIV - 1); pat_edited = 1; dirty_steps = 1; }
+                else pad_follow_octave = clampi(pad_follow_octave + (e > 0 ? 1 : -1), -2, 2);
+                dirty_page = dirty_hdr = 1;
+            } else if (page == PG_MIXER && !layer) {  /* the mixer: track k's LEVEL / PAN / SEND */
                 if (mix_row == 6u) {            /* (VIBE) MASTER */
                     if (k == 0) set.m_vol = (uint8_t)clampi((int32_t)set.m_vol + e, 0, 127);
                     else if (k == 1) set.m_dj = (uint8_t)clampi((int32_t)set.m_dj + e, 0, 128);
@@ -2468,7 +2483,7 @@ static void app_main(void)
 #endif
             if (seq_shown() || rec || rec_down || layer) draw_hints();   /* the sequencer's hints instead of the voice LEDs */
             else if (q != leds_q) { leds_q = q; draw_leds(); }
-            if (page == PG_GLOBAL && fm1_ms - t_page >= 250u) dirty_page = 1;
+            if ((page == PG_GLOBAL || page == PG_BACKING) && fm1_ms - t_page >= 250u) dirty_page = 1;
         }
         if (seq_shown() || rec) {               /* the sequencer's strip instead of the scope */
             if (ui_seq_ticks != ticks_seen) { ticks_seen = ui_seq_ticks; dirty_steps = 1; }
