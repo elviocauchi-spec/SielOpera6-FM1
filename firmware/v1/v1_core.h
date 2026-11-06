@@ -735,6 +735,12 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         if(sounding_voices==3u)penalty+=(excess>>2);
         uint32_t pct=penalty<45u?100u-penalty:55u;
         poly_gain_target=(poly_gain_target*(int32_t)pct)/100;
+        /* The eighth simultaneous voice is the harshest corner case:
+           hot MASTER programs can still overdrive the output reverb
+           return by a few dB. Reserve extra headroom ONLY for large
+           held clusters, preserving smaller chords and lead level. */
+        if(sounding_voices>=8u && p->master>85u)
+            poly_gain_target=(poly_gain_target*3)/4;
     }
     const int32_t stack_gain_q8=vg1_stack_gain_q15(p)>>7;
     /* Only dual-path modes need the second coefficient / second division. */
