@@ -286,35 +286,39 @@ static inline void vg1_osc_stereo(v1_osc_state_t *o,const v1_osc_patch_t *p,
     uint32_t pw=vg1_pw(p->pw,pwm_mod),i;
     int32_t sl=0,sr=0;
 #ifndef VG1_LEGACY_OSC_LOOP
-    /* The overwhelming majority of FM1 polyphonic blocks run FAT=1,2,
-       3 or 4. Avoid a dynamic layer loop, parity test and FAT averaging
-       divide per sample. Every phase, RNG evaluation and integer division
-       remains exactly the same as the reference code. */
+    /* The common high-polyphony state FAT=1 has exactly ONE oscillator
+       sample for both channels. Its own short hot path avoids fat-case
+       branching, any averaging, and the expensive generic layer loop. */
+    if(count==1u) {
+        uint32_t step=o->inc[0];
+        int32_t sample=vg1_wave_eval(o,o->ph[0]+=step,step,pw,p->wave);
+        int32_t levelled=(sample*(int32_t)p->level)>>7;
+        *left+=levelled;
+        *right+=levelled;
+        return;
+    }
+    /* Two-to-four FAT layers use exact fixed-stereo averaging. */
     if(count<=4u) {
         uint32_t step0=o->inc[0];
         uint32_t phase0=(o->ph[0]+=step0);
         int32_t sample0=vg1_wave_eval(o,phase0,step0,pw,p->wave);
-        if(count==1u) {
-            sl=sr=sample0;
+        uint32_t step1=o->inc[1];
+        uint32_t phase1=(o->ph[1]+=step1);
+        int32_t sample1=vg1_wave_eval(o,phase1,step1,pw,p->wave);
+        if(count==2u) {
+            sl=sample0;sr=sample1;
         } else {
-            uint32_t step1=o->inc[1];
-            uint32_t phase1=(o->ph[1]+=step1);
-            int32_t sample1=vg1_wave_eval(o,phase1,step1,pw,p->wave);
-            if(count==2u) {
-                sl=sample0;sr=sample1;
+            uint32_t step2=o->inc[2];
+            uint32_t phase2=(o->ph[2]+=step2);
+            int32_t sample2=vg1_wave_eval(o,phase2,step2,pw,p->wave);
+            sl=sample0+sample2;
+            if(count==3u) {
+                sl/=2;sr=sample1;
             } else {
-                uint32_t step2=o->inc[2];
-                uint32_t phase2=(o->ph[2]+=step2);
-                int32_t sample2=vg1_wave_eval(o,phase2,step2,pw,p->wave);
-                sl=sample0+sample2;
-                if(count==3u) {
-                    sl/=2;sr=sample1;
-                } else {
-                    uint32_t step3=o->inc[3];
-                    uint32_t phase3=(o->ph[3]+=step3);
-                    int32_t sample3=vg1_wave_eval(o,phase3,step3,pw,p->wave);
-                    sl/=2;sr=(sample1+sample3)/2;
-                }
+                uint32_t step3=o->inc[3];
+                uint32_t phase3=(o->ph[3]+=step3);
+                int32_t sample3=vg1_wave_eval(o,phase3,step3,pw,p->wave);
+                sl/=2;sr=(sample1+sample3)/2;
             }
         }
         *left+=(sl*(int32_t)p->level)>>7;
