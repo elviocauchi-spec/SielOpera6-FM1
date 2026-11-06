@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - feature/v1-fm1-engine
+      - feature/vanguard1-recreation
     paths:
       - 'firmware/v1/**'
       - 'tests/v1_core_smoke.c'
