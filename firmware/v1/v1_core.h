@@ -197,6 +197,8 @@ static inline int32_t v1_triangle_sample(uint32_t ph) {
 /* Piecewise semitone ratios implement full +/-48 semitone envelope-2 pitch
    range; the previous linear cents approximation clipped to one octave. */
 static inline uint32_t v1_detune_inc(uint32_t inc, int32_t cents) {
+    /* Avoid 64-bit pitch-ratio math for unmoved oscillators, the usual case. */
+    if(!cents)return inc;
     static const uint32_t ratio[12]={
         65536u,69433u,73561u,77936u,82570u,87481u,
         92682u,98193u,104032u,110219u,116771u,123715u
@@ -488,6 +490,13 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
     uint32_t delay_frames=1u;
     uint32_t lfo_inc[3],vi;
     const int32_t gate_alpha=vg1_gate_contour_alpha(p->vg_gate.contour);
+    const uint32_t arp_enabled=v1_arp_mode(p)!=V1_ARP_OFF;
+    const uint32_t fixed_vcs=p->vg_osc.fat?
+        v1_clip(p->vg_osc.vcs?p->vg_osc.vcs:2u,1,10):1u;
+    /* Only dual-path modes need the second coefficient / second division. */
+    const uint32_t dual_filter=p->filter_type==VG1_F_X ||
+        p->filter_type==VG1_F_FORMANT || p->filter_type==VG1_F_M;
+    const int32_t modwheel_cut=((uint32_t)e->modwheel*32u)/127u;
     uint32_t arp_gate=p->vg_arp.gate;
     uint32_t arp_release;
     int32_t bendc,vib_depthc,master_gain;
@@ -517,7 +526,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
                 e->glide_current_q16=e->glide_target_q16;
         }
         int32_t dryl=0,dryr=0,left,right;
-        if(v1_arp_mode(p)!=V1_ARP_OFF){
+        if(arp_enabled){
             if(e->arp_phase==0 && e->held_count)v1_arp_tick(e);
             if(e->arp_active && e->arp_phase > arp_release) {
                 v1_note_off(e,e->arp_note);e->arp_active=0;
@@ -545,7 +554,8 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             e->lfo[j]=v1_tri_lfo(e->lfo_ph[j]);
         }
         e->vibrato_ph+=(uint32_t)(p->vib_speed+1u)*45000u;
-        int32_t vibc=(vib_depthc*v1_sine_sample(e->vibrato_ph))>>15;
+        int32_t vibc=vib_depthc?
+            (vib_depthc*v1_sine_sample(e->vibrato_ph))>>15 : 0;
         for(i=0;i<V1_VOICES;i++) {
             v1_voice_t *v=&e->voices[i];
             int32_t sl=0,sr=0,fe,amp,cut;
@@ -558,21 +568,21 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
                 int32_t age_cents=(v->drift*(int32_t)p->vg_osc.age)>>10;
                 int32_t env_pitch=((int32_t)p->vg_env2.pitch*v->f.level)>>15;
                 for(oi=0;oi<3;oi++) {
+                    if(!p->osc[oi].level||p->osc[oi].wave==VG1_W_OFF)
+                        continue;
                     int32_t cents=((int32_t)p->vg_lfo[oi].detune*e->lfo[oi])>>15;
                     cents+=(((int32_t)p->vg_env1.detune*v->a.level)>>15);
                     cents+=env_pitch*100+bendc+vibc+age_cents;
                     if(p->vg_glide.on && i==0)
                         cents+=((e->glide_current_q16-e->glide_target_q16)*100)/65536;
-                    for(si=0;si<V1_SUPER;si++)
+                    for(si=0;si<fixed_vcs;si++)
                         v->osc[oi].inc[si]=v1_detune_inc(v->osc[oi].base_inc[si],cents);
                 }
             }
             amp=v1_env_sample(&v->a,&p->amp);
             fe=v1_env_sample(&v->f,&p->filter_env);
             if(!amp && !v->gate){v->active=0;continue;}
-            uint32_t vcs=p->vg_osc.fat?(p->vg_osc.vcs?p->vg_osc.vcs:2u):1u;
-            if(vcs<1u)vcs=1u;
-            if(vcs>10u)vcs=10u;
+            const uint32_t vcs=fixed_vcs;
             for(j=0;j<3;j++) {
                 int32_t pwm=((int32_t)p->vg_lfo[j].pwm*e->lfo[j])>>15;
                 pwm+=((int32_t)p->vg_env1.pwm*amp)>>15;
@@ -584,7 +594,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
 #endif
             sl=v1_clip(sl,-50000,50000);
             sr=v1_clip(sr,-50000,50000);
-            cut=(int32_t)p->cutoff+((uint32_t)e->modwheel*32u/127u)
+            cut=(int32_t)p->cutoff+modwheel_cut
                + (((int32_t)p->vg_env1.cutoff*amp)>>15)
                + (((int32_t)p->vg_env2.cutoff*fe)>>15)
                + ((int32_t)p->vg_keytrack.keytrk*((int32_t)v->note-60))/64
@@ -595,12 +605,17 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             if((e->frames&31u)==0u) {
                 int32_t res=v1_clip((int32_t)p->resonance+(((int32_t)p->vg_env2.resonance*fe)>>15),0,127);
                 c=v1_filter_coeff(cut,res);
-                c2=v1_filter_coeff(v1_clip(cut+10,0,127),res);
                 v->fa1=c.a1;v->fa2=c.a2;v->fa3=c.a3;v->fk=c.k;
-                v->fb1=c2.a1;v->fb2=c2.a2;v->fb3=c2.a3;v->bk=c2.k;
+                if(dual_filter) {
+                    c2=v1_filter_coeff(v1_clip(cut+10,0,127),res);
+                    v->fb1=c2.a1;v->fb2=c2.a2;v->fb3=c.a3;v->bk=c2.k;
+                    v->fb3=c2.a3;
+                } else c2=c;
             } else {
                 c.a1=v->fa1;c.a2=v->fa2;c.a3=v->fa3;c.k=v->fk;
-                c2.a1=v->fb1;c2.a2=v->fb2;c2.a3=v->fb3;c2.k=v->bk;
+                if(dual_filter) {
+                    c2.a1=v->fb1;c2.a2=v->fb2;c2.a3=v->fb3;c2.k=v->bk;
+                } else c2=c;
             }
             sl=vg1_filter_render(&v->f1,&v->f2,&v->pole6,&c,&c2,sl,p->filter_type);
             sr=vg1_filter_render(&v->f1_right,&v->f2_right,&v->pole6_right,
