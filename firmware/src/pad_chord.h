@@ -11,7 +11,7 @@ typedef struct {
     uint8_t down[128];       /* physical/MIDI notes on track A (not the sequencer) */
     uint8_t root;            /* pitch class, 0=C .. 11=B */
     uint8_t third;           /* 2=sus2, 3=minor, 4=major, 5=sus4 */
-    uint8_t valid;           /* holds last complete chord after notes are released */
+    uint8_t valid;           /* active chord; cleared when the final key is released */
     uint8_t count;
     uint32_t revision;
 } pad_chord_t;
@@ -37,8 +37,19 @@ static void pad_chord_event(uint32_t on, uint32_t note)
         if (n < bass) bass = n;
     }
     pad_chord.count = (uint8_t)count;
-    /* Do not jump to a false harmony while the player is still pressing a chord.
-       No keys down: deliberately keep the most recent chord for the backing. */
+    /* The backing follows the physical keyboard gate, not a remembered chord.
+     * Releasing the last played key disarms it immediately; the audio ISR then
+     * note-offs B and its existing reverb tail fades naturally.
+     * During a legato transition (one/two keys still down), keep the last
+     * complete harmony to avoid a false intermediate chord. */
+    if (!count) {
+        if (pad_chord.valid) {
+            pad_chord.valid = 0u;
+            pad_chord_harmony = 0u;       /* one atomic ISR-visible disarm */
+            pad_chord.revision++;
+        }
+        return;
+    }
     if (count < 3) return;
     for (n = 0; n < 12; n++) {
         int32_t k;
