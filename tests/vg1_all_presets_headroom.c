@@ -58,6 +58,30 @@ int main(void) {
             }
         }
     }
-    printf("PASS: %u factory stress cases, 8 presets x 1..8 notes x 2 velocities; zero accidental internal hard saturation or DAC clipping\n",cases);
+    uint32_t progressive=0;
+    for(uint32_t preset=0;preset<V1_PRESETS;preset++) {
+        for(uint32_t vi=0;vi<2;vi++) {
+            uint8_t note=(preset==1||preset==4)?43:(preset==2||preset==7)?72:60;
+            v1_engine_init(&e,&V1_FACTORY[preset]);
+            for(uint32_t n=1;n<=8;n++) {
+                v1_hold(&e,1,(uint8_t)(note+offsets[n-1]),velocities[vi]);
+                uint32_t peak=render(V1_SR/4);
+                printf("PROGRESS %-14s velocity=%u notes=%u peak=%u plateau=%u busclip=%u delay=%u reverb=%u output=%u\n",
+                       V1_FACTORY[preset].name,velocities[vi],n,peak,
+                       e.diag_drive_plateau,e.diag_post_gain_clamp,
+                       e.diag_delay_over,e.diag_reverb_over,e.diag_final_over);
+                if(e.diag_osc_over||e.diag_drive_plateau||e.diag_post_gain_clamp||
+                   e.diag_delay_over||e.diag_predelay_over||e.diag_reverb_over||
+                   e.diag_final_over||peak>=32767) {
+                    fprintf(stderr,"PROGRESSIVE KEYDOWN HEADROOM REGRESSION: %s, %u notes, velocity %u\n",
+                            V1_FACTORY[preset].name,n,velocities[vi]);
+                    return 1;
+                }
+                progressive++;
+            }
+        }
+    }
+    printf("PASS: %u simultaneous + %u progressive full-engine headroom tests, all eight factory presets, velocities 100/127\n",
+           cases,progressive);
     return 0;
 }
