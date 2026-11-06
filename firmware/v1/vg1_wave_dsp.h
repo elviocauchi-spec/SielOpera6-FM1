@@ -20,14 +20,16 @@ static inline int32_t vg1_triangle(uint32_t ph) {
 }
 static inline int32_t vg1_wave_eval(v1_osc_state_t *o,uint32_t phase,
                                     uint32_t step,uint32_t pw,uint8_t wave) {
-    int32_t saw=v1_saw_sample(phase,step);
+    /* Most Vanguard modes (pulse, sine, noise, FM) do not need a saw.
+       Previously every oscillator computed an unused polyBLEP saw on
+       every sample, on top of its actual waveform. Evaluate lazily. */
     int32_t sine, a, b;
     uint32_t ph2;
     switch(wave) {
         case VG1_W_SQUARE: return vg1_pulse(phase,step,0x80000000u);
         case VG1_W_SQUARE2: return (vg1_pulse(phase,step,0x55555555u)
                                   +vg1_pulse(phase,step,0xaaaaaaaa))/2;
-        case VG1_W_SAWTOOTH: return saw;
+        case VG1_W_SAWTOOTH: return v1_saw_sample(phase,step);
         case VG1_W_PEAK: return vg1_pulse(phase,step,0x028f5c28u);
         case VG1_W_PEAK_PWM: return vg1_pulse(phase,step,pw>>3);
         case VG1_W_COMBED_SQR1:
@@ -51,22 +53,22 @@ static inline int32_t vg1_wave_eval(v1_osc_state_t *o,uint32_t phase,
             ph2=phase+(uint32_t)(((int64_t)v1_sine_sample(phase)*((int32_t)(pw>>24)-64))*512);
             return vg1_pulse(ph2,step,0x80000000u);
         case VG1_W_PWM_SAW:
-            return (saw+v1_saw_sample(phase+pw,step))/2;
+            return (v1_saw_sample(phase,step)+v1_saw_sample(phase+pw,step))/2;
         case VG1_W_BI_SAW:
-            return (saw+v1_saw_sample(phase*2u,step*2u))/2;
+            return (v1_saw_sample(phase,step)+v1_saw_sample(phase*2u,step*2u))/2;
         case VG1_W_SYNCED_SAW:
             ph2=(uint32_t)(((uint64_t)phase*(2u+(pw>>29)))&0xffffffffu);
             return v1_saw_sample(ph2,step*(2u+(pw>>29)));
         case VG1_W_AJX_SAW:
-            return (saw+v1_saw_sample(phase+0x10000000u,step))/2;
+            return (v1_saw_sample(phase,step)+v1_saw_sample(phase+0x10000000u,step))/2;
         case VG1_W_AJX_SAW2:
-            return (2*saw+v1_saw_sample(phase+0x30000000u,step))/3;
+            return (2*v1_saw_sample(phase,step)+v1_saw_sample(phase+0x30000000u,step))/3;
         case VG1_W_AJX_SAW3:
-            return (saw+v1_saw_sample(phase+0x54000000u,step)
+            return (v1_saw_sample(phase,step)+v1_saw_sample(phase+0x54000000u,step)
                        +v1_saw_sample(phase+0x9a000000u,step))/3;
         case VG1_W_TRI_SAW_MORPH:
             a=vg1_triangle(phase);b=(int32_t)(pw>>25);
-            return (a*(127-b)+saw*b)/127;
+            return (a*(127-b)+v1_saw_sample(phase,step)*b)/127;
         case VG1_W_SIN_PEAK_MORPH:
             a=v1_sine_sample(phase);b=(int32_t)(pw>>25);
             return (a*(127-b)+vg1_pulse(phase,step,0x05555555u)*b)/127;
@@ -79,7 +81,7 @@ static inline int32_t vg1_wave_eval(v1_osc_state_t *o,uint32_t phase,
         case VG1_W_R2D2:
             return v1_sine_sample(phase*(1u+(v1_rand(&o->rng)&3u)));
         case VG1_W_DIGITAL:
-            return (saw+vg1_pulse(phase*3u,step*3u,pw))/2;
+            return (v1_saw_sample(phase,step)+vg1_pulse(phase*3u,step*3u,pw))/2;
         case VG1_W_SYNCED_NOISE:
             if(phase<step)o->noise_prev=(int32_t)(v1_rand(&o->rng)>>16)-32768;
             return o->noise_prev;
