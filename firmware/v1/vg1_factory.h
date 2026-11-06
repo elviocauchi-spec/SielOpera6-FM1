@@ -53,10 +53,10 @@ static const v1_patch_t V1_FACTORY[V1_PRESETS] = {
       .vg_gate={.enabled=1,.stereo=1,.left=0xbaba,.right=0xeaea,.mix=127,.contour=104,.speed={16,0}},
       .vg_delay={.on=1,.mix=42,.type=VG1_DELAY_CROSS,.feedback=43,.damp=45,.speed={8,0}},
       .vg_reverb={.on=1,.mix=52,.predelay=12,.room_size=88,.damp=60,.width=116},.bend_range=2,.vib_speed=5,.vib_depth=10,
-      .osc={O(VG1_W_AJX_SAW3,108,64,65,0,0),O(VG1_W_PULSE_PWM,99,74,0,0,4),O(VG1_W_SAWTOOTH,65,64,0,-12,0)},
+      .osc={O(VG1_W_AJX_SAW3,70,64,65,0,0),O(VG1_W_PULSE_PWM,62,74,0,0,4),O(VG1_W_SAWTOOTH,41,64,0,-12,0)},
       .amp=ADS(28,65,110,70),.filter_env=ADS(22,56,70,68),
       .cutoff=68,.resonance=23,.filter_type=V1_LP12,
-      .master=48
+      .master=65
     },
     { .name="ACID RUNNER",
       .vg_osc={.retrig=1,.fat=0,.vcs=2,.age=0},
