@@ -23,7 +23,10 @@ static void app_idle(void);
 #include "obv_engine.h"
 #include "pad_chord.h"
 /* Preview stays RAM-only: no flash patch/sequence format changes. */
-static uint32_t pad_demo_active, pad_demo_b_level = 80u;
+/* B is deliberately prominent enough to hear under the pad.
+ * The mixer squares level: 112 is ~1.25x unity versus 80 being 0.64x. */
+#define PAD_DEMO_B_LEVEL 112u
+static uint32_t pad_demo_active, pad_demo_b_level = PAD_DEMO_B_LEVEL;
 #include "obv_seq.h"
 #include "obv_patches.h"
 
@@ -290,7 +293,7 @@ static void pad_demo_enter(void)
     pad_demo_saved_edited[1] = trk_edited[1];
     patch_from_factory(&live_p[0], &FACT_PAD_LAB[0]); /* pad: CELESTIAL */
     patch_from_factory(&live_p[1], &FACT_PAD_LAB[3]); /* backing: MIST FLOW, no percussive ticks */
-    pad_demo_b_level = 80u;
+    pad_demo_b_level = PAD_DEMO_B_LEVEL;
     pad_demo_track.div = D_4;
     pad_follow_enabled = 1u;
     pad_follow_octave = 1;
