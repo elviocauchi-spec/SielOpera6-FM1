@@ -292,7 +292,27 @@ static inline void vg1_osc_stereo(v1_osc_state_t *o,const v1_osc_patch_t *p,
         else if(i&1u)sr+=sample;
         else sl+=sample;
     }
+    /* Stereo FAT is usually 1..4 layers on an FM1 polyphonic chord.
+       The previous loop performed TWO costly variable integer divisions
+       for EVERY OSCILLATOR on EVERY SAMPLE. Fixed cases let the Jieli
+       compiler use shifts/multipliers for small constant divisors. All
+       C integer divisions (including negative rounding) stay identical. */
+#ifdef VG1_LEGACY_FAT_DIVIDE
     if(count>1u){sl/=(int32_t)((count+1u)/2u);sr/=(int32_t)(count/2u);}
+#else
+    switch(count) {
+        case 1u: case 2u: break;
+        case 3u: sl/=2; break;
+        case 4u: sl/=2; sr/=2; break;
+        case 5u: sl/=3; sr/=2; break;
+        case 6u: sl/=3; sr/=3; break;
+        case 7u: sl/=4; sr/=3; break;
+        case 8u: sl/=4; sr/=4; break;
+        case 9u: sl/=5; sr/=4; break;
+        case 10u: sl/=5; sr/=5; break;
+        default: break;
+    }
+#endif
     *left+=(sl*(int32_t)p->level)>>7;
     *right+=(sr*(int32_t)p->level)>>7;
 }
