@@ -7,8 +7,8 @@ Development branch `feature/pad-lab-chord-follow`. **Experimental source, not an
 - **Track A** is the live keyboard pad. The chord detector listens to the actual track-A keyboard/MIDI note-on and note-off events.
 - **Track B** supplies a fixed, editable background ostinato. Its **rhythm stays fixed**, but its root/third/fifth/octave adapt to the latest complete chord played on A.
 - A newly created unsaved pattern gets a sparse eight-step C-major-reference accompaniment in B; existing saved patterns are not rewritten.
-- A new chord takes effect on the sequence's next triggered note. The previous harmony stays after release, until another complete chord is recognized.
-- Recognized: major, minor, sus2, sus4 **three-note triads**, including inversions. Extended/ambiguous harmonies need further testing. If fewer than three notes are played, keep the previous harmony. A 1- or 2-note input before any triad will not start the backing.
+- A new chord takes effect on the sequence's next triggered note. **Releasing the final keyboard key immediately disarms the backing**, sends note-offs to any sounding B voices, and prevents new B steps until another complete triad is played. The B amp envelope and shared reverb/delay fade naturally; the sequencer clock can continue while silent.
+- Recognized: major, minor, sus2, sus4 **three-note triads**, including inversions. Extended/ambiguous harmonies need further testing. When one or two notes remain held during a legato chord transition, the previous harmony persists until the next full chord. When **all keys are released**, the harmony is cleared. One or two new notes alone will not restart the backing.
 - Background sequence uses the existing step sequencer and engine. **No generative random pitch changes** are introduced.
 - The global BACKING page controls follow ON/OFF, B volume, division and accompaniment octave. These first-stage controls are runtime settings; **they are not persisted** after a restart yet.
 
@@ -18,7 +18,7 @@ Development branch `feature/pad-lab-chord-follow`. **Experimental source, not an
 - **SEQ:** retains the established step editor and pattern operations.
 - **ENV, LFO, FX, EDIT:** still open advanced sound-design pages.
 - **ALGORITHM:** selects track A-D, **PRESETS:** changes its sound.
-- **PLAY:** runs/stops the backing sequences. With FOLLOW enabled, B is silent until a complete chord has been played on A.
+- **PLAY:** runs/stops the backing sequences. In PAD LAB demo mode, B is silent until a complete chord is played on A and stops triggering as soon as the last key is released, whether FOLLOW is ON or FIXED. Turning FOLLOW OFF outside the demo retains the legacy standalone sequencer behavior.
 - Current mixer and other navigation behavior remain transitional; full UI consolidation is a subsequent milestone.
 
 ## C-major reference notes for the B sequencer
