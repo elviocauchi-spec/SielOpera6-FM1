@@ -37,7 +37,7 @@ int main(void) {
     const uint8_t roots[]={36,48,60,72,84};
     const uint8_t count[]={1,3,5,8};
     uint32_t cases=0,bad=0,filter=0,bus=0,pan=0,fx=0,guard=0;
-    for(uint32_t p=0;p<V1_PRESETS;p++)
+    for(uint32_t p=0;p<VG1_AUTHORED_PRESETS;p++)
     for(uint32_t k=0;k<sizeof roots;k++)
     for(uint32_t ci=0;ci<4;ci++)
     for(uint32_t mod=0;mod<2;mod++) {
