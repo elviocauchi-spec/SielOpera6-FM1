@@ -12,6 +12,7 @@ on:
       - 'tests/vg1_render.c'
       - 'tests/vg1_gate_smoke.c'
       - 'tests/vg1_release_smoke.c'
+      - 'tests/vg1_polyphony_smoke.c'
       - 'tools/vg1_audio_report.py'
       - 'tools/build.py'
       - '.github/workflows/v1-fm1.yml'
@@ -34,6 +35,10 @@ jobs:
         run: |
           gcc -std=c11 -O2 -Wall -Wextra -o /tmp/vg1_release_smoke tests/vg1_release_smoke.c
           /tmp/vg1_release_smoke
+      - name: Guard four-note FM1 DSP FAT budget, clipping and voice release
+        run: |
+          gcc -std=c11 -O2 -Wall -Wextra -o /tmp/vg1_polyphony_smoke tests/vg1_polyphony_smoke.c
+          /tmp/vg1_polyphony_smoke
 
   audio-reference:
     needs: host
