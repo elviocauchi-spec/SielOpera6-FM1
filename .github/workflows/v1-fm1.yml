@@ -49,7 +49,7 @@ jobs:
           /tmp/vg1_all_presets_headroom
       - name: Benchmark exact 256-frame DSP, legacy versus optimized control-rate
         run: |
-          gcc -std=c11 -O2 -Wall -Wextra -DVG1_LEGACY_ENVELOPES -DVG1_LEGACY_FAT_DIVIDE -DVG1_LEGACY_OSC_LOOP -o /tmp/vg1_cpu_bench_old tests/vg1_cpu_bench.c
+          gcc -std=c11 -O2 -Wall -Wextra -DVG1_LEGACY_ENVELOPES -DVG1_LEGACY_FAT_DIVIDE -DVG1_LEGACY_OSC_LOOP -DVG1_LEGACY_SCAN_ALL -o /tmp/vg1_cpu_bench_old tests/vg1_cpu_bench.c
           gcc -std=c11 -O2 -Wall -Wextra -o /tmp/vg1_cpu_bench_fast tests/vg1_cpu_bench.c
           /tmp/vg1_cpu_bench_old > /tmp/vg1_old_bench.log
           /tmp/vg1_cpu_bench_fast > /tmp/vg1_fast_bench.log
@@ -71,7 +71,7 @@ jobs:
       - name: Audit silence, clipping, stereo, spectral signatures and preset identity
         run: python3 tools/vg1_audio_report.py build/vg1-audio
       - name: Compile original per-sample ADSR for exact DSP sound reference
-        run: gcc -std=c11 -O2 -Wall -Wextra -DVG1_LEGACY_ENVELOPES -DVG1_LEGACY_FAT_DIVIDE -DVG1_LEGACY_OSC_LOOP -o /tmp/vg1_render_legacy tests/vg1_render.c
+        run: gcc -std=c11 -O2 -Wall -Wextra -DVG1_LEGACY_ENVELOPES -DVG1_LEGACY_FAT_DIVIDE -DVG1_LEGACY_OSC_LOOP -DVG1_LEGACY_SCAN_ALL -o /tmp/vg1_render_legacy tests/vg1_render.c
       - name: Render legacy reference and verify optimized engine preserves every audio sample
         run: |
           /tmp/vg1_render_legacy build/vg1-legacy-audio > /tmp/vg1-legacy-render.log
