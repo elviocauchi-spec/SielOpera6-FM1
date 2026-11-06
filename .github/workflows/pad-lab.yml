@@ -20,6 +20,11 @@ jobs:
           set -eu
           cc -std=c11 -O2 -Wall -Wextra -Werror tests/pad_chord_test.c -o /tmp/pad-chord-test
           /tmp/pad-chord-test
+      - name: Compile and test exact held-key arpeggiation
+        run: |
+          set -eu
+          cc -std=c11 -O2 -Wall -Wextra -Werror tests/pad_keys_test.c -o /tmp/pad-keys-test
+          /tmp/pad-keys-test
       - name: Verify smooth, metronome-free pad audition
         run: python3 tests/pad_lab_audition_test.py
       - name: Check patch and UI source invariants
@@ -30,10 +35,10 @@ jobs:
           seq = Path("firmware/src/obv_seq.h").read_text()
           ui = Path("firmware/src/obv_ui.h").read_text()
           presets = Path("firmware/src/obv_patches.h").read_text()
-          assert '#include "pad_chord.h"' in src
-          assert 'pad_chord_event(on, note)' in src
-          assert 'pad_chord_pitch(' in seq
-          assert 'pad_follow_enabled' in seq
+          assert '#include "pad_keys.h"' in src
+          assert 'pad_keys_event(on, note)' in src
+          assert 'pad_keys_pick(' in seq
+          assert 'pad_arp_enabled' in seq
           assert 'P A D   L A B' in ui
           assert 'FACT_PAD_LAB' in presets
           assert 'NFACT + NVIBE + NPAD_LAB' in src
