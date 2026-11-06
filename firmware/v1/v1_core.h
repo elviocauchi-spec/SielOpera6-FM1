@@ -658,6 +658,25 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
     const int32_t modwheel_cut=((uint32_t)e->modwheel*32u)/127u;
     const vg1_env_rates_t amp_rates=vg1_env_rates(&p->amp);
     const vg1_env_rates_t filter_rates=vg1_env_rates(&p->filter_env);
+    /* Delay and four-comb reverb parameters were recalculated on EVERY
+       sample (sometimes four times). Only patch edits change these, so
+       hold them for one 256-frame DMA half, as with the LFO rates. */
+    const uint32_t reverb_on=p->vg_reverb.on;
+    const int32_t reverb_damp_gain=127-(int32_t)p->vg_reverb.damp;
+    const int32_t reverb_width=p->vg_reverb.width;
+    const int32_t reverb_width_inv=127-reverb_width;
+    const int32_t reverb_mix=p->vg_reverb.mix;
+    const uint32_t reverb_room_offset=(uint32_t)p->vg_reverb.room_size*4u;
+    const uint32_t reverb_taps[4]={
+        1109u+reverb_room_offset,1327u+reverb_room_offset,
+        1559u+reverb_room_offset,1801u+reverb_room_offset
+    };
+    const uint32_t predelay_frames=v1_clip((int32_t)p->vg_reverb.predelay*44,0,8191);
+    const uint32_t delay_on=p->vg_delay.on;
+    const uint32_t dmode=p->vg_delay.type;
+    const int32_t delay_feedback=p->vg_delay.feedback;
+    const int32_t delay_mix=p->vg_delay.mix;
+    const int32_t delay_damp_gain=127-(int32_t)p->vg_delay.damp;
     uint32_t arp_gate=p->vg_arp.gate;
     uint32_t arp_release;
     int32_t bendc,vib_depthc,master_gain;
@@ -709,15 +728,23 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         e->gate_smooth_right=vg1_gate_smooth(e->gate_smooth_right,target_r,gate_alpha);
         e->gate_out_left=vg1_gate_smooth(e->gate_out_left,e->gate_smooth,gate_alpha);
         e->gate_out_right=vg1_gate_smooth(e->gate_out_right,e->gate_smooth_right,gate_alpha);
-        /* Three independent LFOs. Calculations are integer and bounded. */
+        /* Three independent LFOs. Calculations are integer and bounded.
+           PWM LFO terms are shared across all polyphonic voices, not
+           recomputed separately for each one of up to sixteen. */
+        int32_t pwm_lfo[3];
         for(j=0;j<3;j++) {
             e->lfo_ph[j]+=lfo_inc[j];
             e->lfo[j]=v1_tri_lfo(e->lfo_ph[j]);
+            pwm_lfo[j]=((int32_t)p->vg_lfo[j].pwm*e->lfo[j])>>15;
         }
+        const uint32_t update_controls=(e->frames&31u)==0u;
+        int32_t shared_lfo_cutoff=0;
+        if(update_controls)for(j=0;j<3;j++)
+            shared_lfo_cutoff+=((int32_t)p->vg_lfo[j].cutoff*e->lfo[j])>>15;
         e->vibrato_ph+=(uint32_t)(p->vib_speed+1u)*45000u;
         /* Pitch modulation is consumed only on the 32-sample tuning
            tick. Calculating vibrato on the other 31 samples was wasted. */
-        int32_t vibc=(vib_depthc && (e->frames&31u)==0u)?
+        int32_t vibc=(vib_depthc && update_controls)?
             (vib_depthc*v1_sine_sample(e->vibrato_ph))>>15 : 0;
         for(i=0;i<V1_VOICES;i++) {
             v1_voice_t *v=&e->voices[i];
@@ -725,7 +752,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             if(!v->active)continue;
             /* Pitch modulation applies to ALL three oscillators, including
              * every supersaw component. No oscillator's base pitch drifts. */
-            if((e->frames&31u)==0u) {
+            if(update_controls) {
                 uint32_t oi,si;
                 v->drift=v1_clip(v->drift+(int32_t)(v1_rand(&e->rng)&7u)-3,-256,256);
                 int32_t age_cents=(v->drift*(int32_t)p->vg_osc.age)>>10;
@@ -752,7 +779,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             if(!amp && !v->gate){v->active=0;continue;}
             const uint32_t vcs=fixed_vcs;
             for(j=0;j<3;j++) {
-                int32_t pwm=((int32_t)p->vg_lfo[j].pwm*e->lfo[j])>>15;
+                int32_t pwm=pwm_lfo[j];
                 pwm+=((int32_t)p->vg_env1.pwm*amp)>>15;
                 pwm+=((int32_t)p->vg_env2.pwm*fe)>>15;
                 vg1_osc_stereo(&v->osc[j],&p->osc[j],vcs,pwm,&sl,&sr);
@@ -773,7 +800,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             sl=v1_clip(sl,-50000,50000);
             sr=v1_clip(sr,-50000,50000);
             v1_svf_coef_t c,c2;
-            if((e->frames&31u)==0u) {
+            if(update_controls) {
                 /* Both coefficients and cutoff modulation are only
                    consumed every 32 samples. Old code needlessly did
                    2 track divisions + 5 multiplies on EVERY voice sample. */
@@ -782,7 +809,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
                     + (((int32_t)p->vg_env2.cutoff*fe)>>15)
                     + ((int32_t)p->vg_keytrack.keytrk*((int32_t)v->note-60))/64
                     + ((int32_t)p->vg_keytrack.veltrk*((int32_t)v->velocity-64))/64;
-                for(j=0;j<3;j++)cut+=((int32_t)p->vg_lfo[j].cutoff*e->lfo[j])>>15;
+                cut+=shared_lfo_cutoff;
                 cut=v1_clip(cut,0,127);
                 int32_t res=v1_clip((int32_t)p->resonance+(((int32_t)p->vg_env2.resonance*fe)>>15),0,127);
                 c=v1_filter_coeff(cut,res);
@@ -884,16 +911,12 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         right=(dryr*gr)>>15;
         /* Original Vanguard order: TRANCEGATE -> DELAY -> REVERB.
            Delay supports the documented mono, stereo, cross and widen modes. */
-        if(p->vg_delay.on) {
+        if(delay_on) {
         uint32_t dl=e->delay_pos&32767u;
         int32_t oldl=e->delay_mem[0][(dl-delay_frames)&32767u];
         int32_t oldr=e->delay_mem[1][(dl-delay_frames)&32767u];
-        uint32_t dmode=p->vg_delay.type;
-        int32_t dfb=p->vg_delay.on?p->vg_delay.feedback:0;
-        int32_t dmix=p->vg_delay.on?p->vg_delay.mix:0;
-        int32_t damp=p->vg_delay.damp;
-        e->delay_lp[0]+=(oldl-e->delay_lp[0])*(127-damp)/127;
-        e->delay_lp[1]+=(oldr-e->delay_lp[1])*(127-damp)/127;
+        e->delay_lp[0]+=(oldl-e->delay_lp[0])*delay_damp_gain/127;
+        e->delay_lp[1]+=(oldr-e->delay_lp[1])*delay_damp_gain/127;
         oldl=e->delay_lp[0]; oldr=e->delay_lp[1];
         int32_t fl=0,fr=0;
         switch(dmode) {
@@ -908,8 +931,8 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
            restore 4x gain only for the wet output. The feedback coefficient
            operates in this lower-level domain, without hard-clipping echoes.
            Bypassed delays retain their previous dry capture behavior. */
-        int32_t dwl=(p->vg_delay.on?(left>>2):left)+((fl*dfb)>>7);
-        int32_t dwr=(p->vg_delay.on?(right>>2):right)+((fr*dfb)>>7);
+        int32_t dwl=(left>>2)+((fl*delay_feedback)>>7);
+        int32_t dwr=(right>>2)+((fr*delay_feedback)>>7);
 #ifdef VG1_AUDIO_DIAGNOSTICS
         if(dwl>32767||dwl<-32767||dwr>32767||dwr<-32767)
             e->diag_delay_over++;
@@ -917,14 +940,14 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         e->delay_mem[0][dl]=(int16_t)v1_sat16(dwl);
         e->delay_mem[1][dl]=(int16_t)v1_sat16(dwr);
         e->delay_pos++;
-        if(p->vg_delay.on) {
+        {
             if(dmode==VG1_DELAY_WIDEN) {
                 /* Original WIDEN: LEFT remains direct, RIGHT is delayed.
                    Mix crossfades from direct right to shifted right. */
-                right=(right*(127-dmix)+(oldr*4)*dmix)>>7;
+                right=(right*(127-delay_mix)+(oldr*4)*delay_mix)>>7;
             } else {
-                left+=(oldl*dmix)>>5;
-                right+=(oldr*dmix)>>5;
+                left+=(oldl*delay_mix)>>5;
+                right+=(oldr*delay_mix)>>5;
             }
         }
         } else {
@@ -939,16 +962,9 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
 
         /* Room model: four comb paths, stereo mix, damp, size and width.
            Input AFTER delay, as described in the Vanguard 1.6 manual. */
-        if(p->vg_reverb.on) {
-        static const uint16_t taps[4]={1109,1327,1559,1801};
-        int32_t room=p->vg_reverb.on?p->vg_reverb.room_size:64;
-        int32_t rdamp=p->vg_reverb.on?p->vg_reverb.damp:32;
-        int32_t rwidth=p->vg_reverb.on?p->vg_reverb.width:127;
-        int32_t rmix=p->vg_reverb.on?p->vg_reverb.mix:0;
+        if(reverb_on) {
         int32_t rev_in=(left+right)>>2;
         uint32_t pre=e->reverb_prepos&8191u;
-        uint32_t predelay_frames=(uint32_t)p->vg_reverb.predelay*44u;
-        if(predelay_frames>8191u)predelay_frames=8191u;
         int32_t predelayed=predelay_frames?
             e->reverb_predelay[(pre-predelay_frames)&8191u]:rev_in;
 #ifdef VG1_AUDIO_DIAGNOSTICS
@@ -960,10 +976,9 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         int32_t wetl=0,wetr=0;
         uint32_t rp=e->reverb_pos&2047u;
         for(j=0;j<4;j++) {
-            uint32_t tap=taps[j]+((uint32_t)room*4u);
-            uint32_t index=(rp+2048u-tap)&2047u;
+            uint32_t index=(rp+2048u-reverb_taps[j])&2047u;
             int32_t value=e->reverb_mem[j][index];
-            e->reverb_lp[j]+=(value-e->reverb_lp[j])*(127-rdamp)/127;
+            e->reverb_lp[j]+=(value-e->reverb_lp[j])*reverb_damp_gain/127;
             int32_t fb=e->reverb_lp[j];
             if(j&1u) wetr+=fb; else wetl+=fb;
             int32_t rw=(rev_in>>1)+((fb*96)>>7);
@@ -974,10 +989,10 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         }
         e->reverb_pos++;
         int32_t wetm=(wetl+wetr)>>1;
-        wetl=(wetl*rwidth+wetm*(127-rwidth))/127;
-        wetr=(wetr*rwidth+wetm*(127-rwidth))/127;
-        left+=(wetl*rmix)>>9;
-        right+=(wetr*rmix)>>9;
+        wetl=(wetl*reverb_width+wetm*reverb_width_inv)/127;
+        wetr=(wetr*reverb_width+wetm*reverb_width_inv)/127;
+        left+=(wetl*reverb_mix)>>9;
+        right+=(wetr*reverb_mix)>>9;
         } else {
             /* No inactive reverb feedback and no phantom reverb clipping.
                Zero each position as the ring rotates; skip all 4 comb
