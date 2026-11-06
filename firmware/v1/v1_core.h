@@ -73,7 +73,7 @@ typedef struct {
     uint32_t lfo_ph[3], frames, vibrato_ph, auto_pan_ph;
     int32_t lfo[3];
     volatile int32_t bend14;
-    volatile uint8_t aftertouch;
+    volatile uint8_t aftertouch,modwheel,midi_volume,midi_expression;
     uint16_t gate_step;
     uint32_t gate_phase;
     int32_t gate_smooth,gate_smooth_right;
@@ -306,6 +306,7 @@ static void v1_engine_init(v1_engine_t *e,const v1_patch_t *p) {
     for(i=0;i<sizeof(*e);i++) b[i]=0;
     e->patch=*p;
     e->rng=0x14f1ab27u;
+    e->midi_volume=e->midi_expression=127u;
     e->gate_smooth=e->gate_smooth_right=32767;
 }
 static void v1_note_on(v1_engine_t *e,uint8_t note,uint8_t vel) {
@@ -420,7 +421,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
     uint32_t lfo_inc[3],vi;
     uint32_t arp_gate=p->vg_arp.gate;
     uint32_t arp_release;
-    int32_t bendc,vib_depthc;
+    int32_t bendc,vib_depthc,master_gain;
     if(p->vg_delay.on) {
         if(p->vg_delay.type==VG1_DELAY_WIDEN)
             delay_frames=44u*(p->vg_delay.widen_ms?p->vg_delay.widen_ms:50u);
@@ -435,6 +436,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         lfo_inc[vi]=hz*97392u;
     }
     bendc=(e->bend14*(int32_t)p->bend_range*100)/8192;
+    master_gain=((int32_t)p->master*e->midi_volume*e->midi_expression)/(127*127);
     vib_depthc=((int32_t)e->aftertouch*(int32_t)p->vib_depth*100)/(127*127);
     if(!step_frames)step_frames=1;
     if(!gate_frames)gate_frames=1;
@@ -500,7 +502,7 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
             }
             sl=v1_clip(sl,-50000,50000);
             sr=v1_clip(sr,-50000,50000);
-            cut=(int32_t)p->cutoff
+            cut=(int32_t)p->cutoff+((uint32_t)e->modwheel*32u/127u)
                + (((int32_t)p->vg_env1.cutoff*amp)>>15)
                + (((int32_t)p->vg_env2.cutoff*fe)>>15)
                + ((int32_t)p->vg_keytrack.keytrk*((int32_t)v->note-60))/64
@@ -623,8 +625,8 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         wetr=(wetr*rwidth+wetm*(127-rwidth))/127;
         left+=(wetl*rmix)>>9;
         right+=(wetr*rmix)>>9;
-        left=(left*(int32_t)p->master)>>7;
-        right=(right*(int32_t)p->master)>>7;
+        left=(left*master_gain)>>7;
+        right=(right*master_gain)>>7;
         out[f*2u]+=v1_sat16(left);
         out[f*2u+1u]+=v1_sat16(right);
         if((uint32_t)(left<0?-left:left)>e->render_peak)e->render_peak=(uint32_t)(left<0?-left:left);
