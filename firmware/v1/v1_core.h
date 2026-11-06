@@ -217,7 +217,7 @@ static inline int32_t vg1_stack_gain_q15(const v1_patch_t *p) {
         limit=140u;
         /* High-Q / high-drive patches need enough resonant-filter
            headroom to avoid hitting the drive knee ceiling altogether. */
-        if(p->vg_amp.drive>=64u)limit=90u;
+        if(p->vg_amp.drive>=64u)limit=72u;
         if(p->resonance>=70u)limit=40u;
     }
     if(total<=limit)return 32768; /* true unity: Q8=256 */
