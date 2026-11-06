@@ -10,6 +10,7 @@ on:
       - 'firmware/v1/**'
       - 'tests/v1_core_smoke.c'
       - 'tests/vg1_render.c'
+      - 'tests/vg1_gate_smoke.c'
       - 'tools/vg1_audio_report.py'
       - 'tools/build.py'
       - '.github/workflows/v1-fm1.yml'
@@ -24,6 +25,10 @@ jobs:
         run: gcc -std=c11 -O2 -Wall -Wextra -o /tmp/v1_smoke tests/v1_core_smoke.c
       - name: Validate Vanguard 1 waveforms, filters, FAT stereo, amp, trancegate, arp and glide
         run: /tmp/v1_smoke
+      - name: Compile and run anti-click Trancegate contour tests
+        run: |
+          gcc -std=c11 -O2 -Wall -Wextra -o /tmp/vg1_gate_smoke tests/vg1_gate_smoke.c
+          /tmp/vg1_gate_smoke
 
   audio-reference:
     needs: host
