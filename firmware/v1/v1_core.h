@@ -67,6 +67,7 @@ typedef struct {
     v1_svf_state_t f1, f2;
     v1_env_state_t a, f;
     uint32_t age;
+    int32_t drift;
     int32_t fa1,fa2,fa3,fk,fb1,fb2,fb3,bk,pole6; /* control-rate coefficients and 6dB pole */
     uint8_t note, velocity, gate, active;
 } v1_voice_t;
@@ -411,6 +412,10 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
     if(e->patch.vg_arp.on) step_frames=vg1_rate_samples(quarter,e->patch.vg_arp.speed);
     if(e->patch.vg_gate.enabled)gate_frames=vg1_rate_samples(quarter,e->patch.vg_gate.speed);
     uint32_t delay_frames=v1_quarter(e,bpm)*3u/4u;
+    uint32_t lfo_inc[3],vi;
+    uint32_t arp_gate=p->vg_arp.on?p->vg_arp.gate:p->arp_gate;
+    uint32_t arp_release;
+    int32_t bendc,vib_depthc;
     if(e->patch.vg_delay.on) {
         if(e->patch.vg_delay.type==VG1_DELAY_WIDEN)
             delay_frames=220u*(e->patch.vg_delay.widen_ms?e->patch.vg_delay.widen_ms:80u);
@@ -419,14 +424,23 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
     if(delay_frames>32767u) delay_frames=32767u;
     if(!delay_frames)delay_frames=1u;
     const v1_patch_t *p=&e->patch;
+    /* Block-derived control rates keep expensive integer division OUT of
+       the 44.1kHz sample loop. The 256-frame ISR has ~5.8ms deadline. */
+    for(vi=0;vi<3;vi++) {
+        uint32_t hz=p->vg_lfo[vi].speed?p->vg_lfo[vi].speed:
+                    (uint32_t)p->lfo_rate[vi]*60u/127u;
+        lfo_inc[vi]=hz*97392u;
+    }
+    bendc=(e->bend14*(int32_t)p->bend_range*100)/8192;
+    vib_depthc=((int32_t)e->aftertouch*(int32_t)p->vib_depth*100)/(127*127);
     if(!step_frames)step_frames=1;
     if(!gate_frames)gate_frames=1;
+    arp_release=(step_frames*(arp_gate+1u))/128u;
     for(f=0;f<n;f++) {
         int32_t dry=0, left,right;
         if(v1_arp_mode(p)!=V1_ARP_OFF){
             if(e->arp_phase==0 && e->held_count)v1_arp_tick(e);
-            uint32_t gate_len=p->vg_arp.on?p->vg_arp.gate:p->arp_gate;
-            if(e->arp_active && e->arp_phase > (step_frames*(uint32_t)(gate_len+1u))/128u) {
+            if(e->arp_active && e->arp_phase > arp_release) {
                 v1_note_off(e,e->arp_note);e->arp_active=0;
             }
             e->arp_phase++;
@@ -445,15 +459,11 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
         e->gate_smooth_right+=(target_r-e->gate_smooth_right)/(int32_t)slew;
         /* Three independent LFOs. Calculations are integer and bounded. */
         for(j=0;j<3;j++) {
-            uint32_t rate=p->vg_lfo[j].speed?p->vg_lfo[j].speed:((uint32_t)p->lfo_rate[j]*60u/127u);
-            uint32_t inc=rate*97392u; /* 0..60 Hz at 44.1kHz */
-            e->lfo_ph[j]+=inc;
+            e->lfo_ph[j]+=lfo_inc[j];
             e->lfo[j]=v1_tri_lfo(e->lfo_ph[j]);
         }
         e->vibrato_ph+=(uint32_t)(p->vib_speed+1u)*45000u;
-        int32_t bendc=(e->bend14*(int32_t)p->bend_range*100)/8192;
-        int32_t vibc=(int32_t)(((int64_t)e->aftertouch*(int32_t)p->vib_depth*100
-             *v1_sine_sample(e->vibrato_ph))/(127*127*32767));
+        int32_t vibc=(vib_depthc*v1_sine_sample(e->vibrato_ph))>>15;
         for(i=0;i<V1_VOICES;i++) {
             v1_voice_t *v=&e->voices[i];
             int32_t s=0,fe,amp,cut;
@@ -462,11 +472,13 @@ static void v1_engine_render(v1_engine_t *e,int32_t *out,uint32_t n,uint32_t bpm
              * every supersaw component. No oscillator's base pitch drifts. */
             if((e->frames&31u)==0u) {
                 uint32_t oi,si;
+                v->drift=v1_clip(v->drift+(int32_t)(v1_rand(&e->rng)&7u)-3,-256,256);
+                int32_t age_cents=(v->drift*(int32_t)p->vg_osc.age)>>10;
                 int32_t env_pitch=((int32_t)p->vg_env2.pitch*v->f.level)>>15;
                 for(oi=0;oi<3;oi++) {
                     int32_t cents=((int32_t)p->vg_lfo[oi].detune*e->lfo[oi])>>15;
                     cents+=(((int32_t)p->vg_env1.detune*v->a.level)>>15);
-                    cents+=env_pitch*100+bendc+vibc;
+                    cents+=env_pitch*100+bendc+vibc+age_cents;
                     if(!oi)cents+=((int32_t)p->lfo_pitch*e->lfo[0])>>16;
                     for(si=0;si<V1_SUPER;si++)
                         v->osc[oi].inc[si]=v1_detune_inc(v->osc[oi].base_inc[si],cents);
