@@ -10,7 +10,7 @@ Development branch `feature/pad-lab-chord-follow`. **Experimental source, not an
 - B runs only while PLAY transport is running and B ARP is ON. Press PLAY to stop the transport.
 - **PRESETS keeps the backing running while browsing sounds on A.** Previously PRESETS exited the demo, which was why B disappeared on other presets. Browsing sounds in the preview does not save them or overwrite your existing song/program choice.
 - The preview's B LEVEL changes ONLY the B mixer gain. It never applies a full mix reset, never changes A's gain/pan/sends and never writes the demo B setting into saved-song globals. Default B LEVEL is 112.
-- The original stored patterns, mixer and patch programs remain available outside the demo. The old chord-harmonizer module remains as an unused source file pending cleanup, but **it is not part of the playback or event path**.
+- The original stored patterns, mixer and patch programs remain available outside the demo. The old chord-classifier module and its tests were removed; **the audio and keyboard paths contain no chord recognition at all**.
 
 ## Performance controls
 - **HOME / PAD:** TONE, MOTION, WIDTH, SPACE, as before, to shape A's live sound.
@@ -22,8 +22,9 @@ Development branch `feature/pad-lab-chord-follow`. **Experimental source, not an
 
 ## Build and safety
 ```sh
-cc -std=c11 -Wall -Wextra -Werror tests/pad_chord_test.c -o /tmp/pad_chord_test
-/tmp/pad_chord_test
+cc -std=c11 -O2 -Wall -Wextra -Werror tests/pad_keys_test.c -o /tmp/pad_keys_test
+/tmp/pad_keys_test
+python3 tests/pad_lab_audition_test.py
 # Target build is still ./build.sh with the AC79 SDK and JieLi compiler.
 ```
 
