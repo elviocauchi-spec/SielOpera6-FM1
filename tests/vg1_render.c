@@ -104,6 +104,15 @@ static int write_wav(const char *path,const v1_patch_t *patch,uint32_t frames,
            path,frames,engine.render_peak,engine.diag_osc_over,engine.diag_pre_drive_over,
            engine.diag_drive_over,engine.diag_delay_over,engine.diag_reverb_over,
            engine.diag_final_over,engine.diag_frames_active);
+    /* GATED MOTION has deliberately low drive and must not saturate.
+       Unlike ACID RUNNER, distortion here was an unintended mixer bug
+       hidden by the late master level. Guard every internal stage. */
+    if(patch==&V1_FACTORY[3] &&
+       (engine.diag_osc_over||engine.diag_pre_drive_over||engine.diag_drive_over||
+        engine.diag_delay_over||engine.diag_reverb_over||engine.diag_final_over)) {
+        fprintf(stderr,"GATED MOTION REGRESSION: internal saturation detected\n");
+        return -1;
+    }
     return 0;
 }
 static v1_patch_t diagnostic_patch(uint32_t type) {
